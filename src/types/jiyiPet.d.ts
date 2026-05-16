@@ -10,6 +10,8 @@ declare global {
       endDrag: () => void;
       showContextMenu: (state: { isStudyMode: boolean }) => void;
       setStudyMode: (isStudyMode: boolean) => void;
+      getWindowVisibility: () => Promise<boolean>;
+      onWindowVisibility: (callback: (isVisible: boolean) => void) => () => void;
       onMenuCommand: (callback: (command: PetMenuCommand) => void) => () => void;
     };
   }

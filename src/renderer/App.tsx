@@ -4,6 +4,8 @@ import jiyiSpritesheet from './assets/jiyi-spritesheet.webp';
 const CLICK_MOVE_LIMIT = 6;
 const DOUBLE_CLICK_DELAY_MS = 260;
 const SPEECH_BUBBLE_DURATION_MS = 2200;
+const AUTO_SPEECH_MIN_DELAY_MS = 45_000;
+const AUTO_SPEECH_MAX_DELAY_MS = 90_000;
 const WAVING_DURATION_MS = 1200;
 const SPRITESHEET_STYLE = {
   backgroundImage: `url(${jiyiSpritesheet})`
@@ -32,6 +34,7 @@ const SPEECH_LINES = [
 export default function App() {
   const [petState, setPetState] = useState<PetState>('idle');
   const [isStudyMode, setIsStudyMode] = useState(false);
+  const [isWindowVisible, setIsWindowVisible] = useState(true);
   const [speechLine, setSpeechLine] = useState<string | null>(null);
   const [wavingRunId, setWavingRunId] = useState(0);
   const pointerStart = useRef<{ x: number; y: number } | null>(null);
@@ -41,12 +44,28 @@ export default function App() {
   const lastRunningDirection = useRef<RunningDirection>('right');
   const clickTimeoutId = useRef<number | null>(null);
   const speechTimeoutId = useRef<number | null>(null);
+  const autoSpeechTimeoutId = useRef<number | null>(null);
   const isStudyModeRef = useRef(false);
+  const isWindowVisibleRef = useRef(true);
+  const petStateRef = useRef<PetState>('idle');
+  const speechLineRef = useRef<string | null>(null);
 
   useEffect(() => {
     isStudyModeRef.current = isStudyMode;
     window.jiyiPet.setStudyMode(isStudyMode);
   }, [isStudyMode]);
+
+  useEffect(() => {
+    isWindowVisibleRef.current = isWindowVisible;
+  }, [isWindowVisible]);
+
+  useEffect(() => {
+    petStateRef.current = petState;
+  }, [petState]);
+
+  useEffect(() => {
+    speechLineRef.current = speechLine;
+  }, [speechLine]);
 
   useEffect(() => {
     if (petState !== 'waving') {
@@ -71,8 +90,42 @@ export default function App() {
       if (speechTimeoutId.current !== null) {
         window.clearTimeout(speechTimeoutId.current);
       }
+
+      clearAutoSpeechTimer();
     };
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    window.jiyiPet.getWindowVisibility().then((nextIsVisible) => {
+      if (isMounted) {
+        setIsWindowVisible(nextIsVisible);
+      }
+    });
+
+    const removeWindowVisibilityListener = window.jiyiPet.onWindowVisibility((nextIsVisible) => {
+      setIsWindowVisible(nextIsVisible);
+    });
+
+    return () => {
+      isMounted = false;
+      removeWindowVisibilityListener();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isStudyMode || !isWindowVisible || petState !== 'idle' || speechLine !== null) {
+      clearAutoSpeechTimer();
+      return;
+    }
+
+    scheduleAutoSpeech();
+
+    return () => {
+      clearAutoSpeechTimer();
+    };
+  }, [isStudyMode, isWindowVisible, petState, speechLine]);
 
   useEffect(() => {
     return window.jiyiPet.onMenuCommand((command) => {
@@ -123,7 +176,65 @@ export default function App() {
     return SPEECH_LINES[nextIndex];
   }
 
-  function showSpeechBubble() {
+  function clearAutoSpeechTimer() {
+    if (autoSpeechTimeoutId.current === null) {
+      return;
+    }
+
+    window.clearTimeout(autoSpeechTimeoutId.current);
+    autoSpeechTimeoutId.current = null;
+  }
+
+  function getRandomAutoSpeechDelay() {
+    return (
+      AUTO_SPEECH_MIN_DELAY_MS +
+      Math.random() * (AUTO_SPEECH_MAX_DELAY_MS - AUTO_SPEECH_MIN_DELAY_MS)
+    );
+  }
+
+  function canShowAutoSpeech() {
+    return (
+      !isStudyModeRef.current &&
+      petStateRef.current === 'idle' &&
+      speechLineRef.current === null &&
+      isWindowVisibleRef.current &&
+      !isDragging.current
+    );
+  }
+
+  function scheduleAutoSpeech() {
+    clearAutoSpeechTimer();
+
+    if (isStudyModeRef.current || !isWindowVisibleRef.current) {
+      return;
+    }
+
+    autoSpeechTimeoutId.current = window.setTimeout(() => {
+      autoSpeechTimeoutId.current = null;
+
+      if (canShowAutoSpeech()) {
+        showSpeechBubble({ resetAutoTimer: false });
+        return;
+      }
+
+      scheduleAutoSpeech();
+    }, getRandomAutoSpeechDelay());
+  }
+
+  function hideSpeechBubble() {
+    if (speechTimeoutId.current !== null) {
+      window.clearTimeout(speechTimeoutId.current);
+      speechTimeoutId.current = null;
+    }
+
+    setSpeechLine(null);
+  }
+
+  function showSpeechBubble({ resetAutoTimer = true } = {}) {
+    if (resetAutoTimer) {
+      clearAutoSpeechTimer();
+    }
+
     if (speechTimeoutId.current !== null) {
       window.clearTimeout(speechTimeoutId.current);
     }
@@ -155,6 +266,11 @@ export default function App() {
       const nextStudyMode = !currentStudyMode;
       isStudyModeRef.current = nextStudyMode;
       setPetState(nextStudyMode ? 'study' : 'idle');
+
+      if (nextStudyMode) {
+        hideSpeechBubble();
+      }
+
       return nextStudyMode;
     });
   }

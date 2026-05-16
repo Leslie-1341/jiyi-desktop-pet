@@ -108,6 +108,10 @@ function sendPetMenuCommand(command: 'toggle-study' | 'back-to-idle') {
   petWindow?.webContents.send('pet-menu-command', command);
 }
 
+function sendWindowVisibility() {
+  petWindow?.webContents.send('pet-window-visibility-changed', Boolean(petWindow?.isVisible()));
+}
+
 function showPetWindow() {
   if (!petWindow) {
     createPetWindow();
@@ -229,6 +233,10 @@ function createPetWindow() {
     petWindow = null;
     dragState = null;
   });
+
+  petWindow.on('show', sendWindowVisibility);
+  petWindow.on('hide', sendWindowVisibility);
+  petWindow.webContents.on('did-finish-load', sendWindowVisibility);
 }
 
 app.whenReady().then(() => {
@@ -278,6 +286,8 @@ ipcMain.on('pet-drag-end', () => {
 ipcMain.on('pet-study-mode-changed', (_event, nextIsStudyMode: boolean) => {
   isStudyMode = nextIsStudyMode;
 });
+
+ipcMain.handle('pet-get-window-visibility', () => Boolean(petWindow?.isVisible()));
 
 ipcMain.on('pet-show-context-menu', (event, menuState: PetContextMenuState) => {
   const sourceWindow = BrowserWindow.fromWebContents(event.sender);

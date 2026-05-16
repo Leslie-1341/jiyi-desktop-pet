@@ -18,6 +18,20 @@ contextBridge.exposeInMainWorld('jiyiPet', {
   setStudyMode: (isStudyMode: boolean) => {
     ipcRenderer.send('pet-study-mode-changed', isStudyMode);
   },
+  getWindowVisibility: () => {
+    return ipcRenderer.invoke('pet-get-window-visibility') as Promise<boolean>;
+  },
+  onWindowVisibility: (callback: (isVisible: boolean) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, isVisible: boolean) => {
+      callback(isVisible);
+    };
+
+    ipcRenderer.on('pet-window-visibility-changed', listener);
+
+    return () => {
+      ipcRenderer.removeListener('pet-window-visibility-changed', listener);
+    };
+  },
   onMenuCommand: (callback: (command: PetMenuCommand) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, command: PetMenuCommand) => {
       callback(command);
