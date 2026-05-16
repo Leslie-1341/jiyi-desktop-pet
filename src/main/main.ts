@@ -1,4 +1,5 @@
 import { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, screen } from 'electron';
+import fs from 'node:fs';
 import path from 'node:path';
 
 type DragState = {
@@ -12,12 +13,88 @@ type PetContextMenuState = {
   isStudyMode: boolean;
 };
 
+type WindowState = {
+  x: number;
+  y: number;
+};
+
+const PET_WINDOW_SIZE = {
+  width: 220,
+  height: 220
+};
+
 let petWindow: BrowserWindow | null = null;
 let dragState: DragState | null = null;
 let tray: Tray | null = null;
 let isStudyMode = false;
 
 const isDev = !app.isPackaged;
+
+function getWindowStatePath() {
+  return path.join(app.getPath('userData'), 'window-state.json');
+}
+
+function getDefaultWindowPosition() {
+  const display = screen.getPrimaryDisplay();
+  const { x, y, width, height } = display.workArea;
+
+  return {
+    x: x + width - PET_WINDOW_SIZE.width - 40,
+    y: y + height - PET_WINDOW_SIZE.height - 60
+  };
+}
+
+function isWindowPositionVisible(windowState: WindowState) {
+  const windowBounds = {
+    ...windowState,
+    ...PET_WINDOW_SIZE
+  };
+
+  return screen.getAllDisplays().some((display) => {
+    const area = display.workArea;
+    const intersectsHorizontally =
+      windowBounds.x < area.x + area.width && windowBounds.x + windowBounds.width > area.x;
+    const intersectsVertically =
+      windowBounds.y < area.y + area.height && windowBounds.y + windowBounds.height > area.y;
+
+    return intersectsHorizontally && intersectsVertically;
+  });
+}
+
+function readSavedWindowState() {
+  try {
+    const rawState = fs.readFileSync(getWindowStatePath(), 'utf8');
+    const parsedState = JSON.parse(rawState) as Partial<WindowState>;
+
+    if (typeof parsedState.x !== 'number' || typeof parsedState.y !== 'number') {
+      return null;
+    }
+
+    const windowState = {
+      x: Math.round(parsedState.x),
+      y: Math.round(parsedState.y)
+    };
+
+    return isWindowPositionVisible(windowState) ? windowState : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveWindowState() {
+  if (!petWindow) {
+    return;
+  }
+
+  const [x, y] = petWindow.getPosition();
+  const windowState: WindowState = { x, y };
+
+  try {
+    fs.writeFileSync(getWindowStatePath(), `${JSON.stringify(windowState, null, 2)}\n`);
+  } catch (error) {
+    console.error('Failed to save window state:', error);
+  }
+}
 
 function resolveTrayIconPath() {
   if (isDev) {
@@ -118,8 +195,8 @@ function createTray() {
 
 function createPetWindow() {
   petWindow = new BrowserWindow({
-    width: 220,
-    height: 220,
+    width: PET_WINDOW_SIZE.width,
+    height: PET_WINDOW_SIZE.height,
     transparent: true,
     frame: false,
     resizable: false,
@@ -138,9 +215,8 @@ function createPetWindow() {
   petWindow.setAlwaysOnTop(true, 'floating');
   petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
-  const display = screen.getPrimaryDisplay();
-  const { width, height } = display.workAreaSize;
-  petWindow.setPosition(width - 260, height - 280);
+  const initialPosition = readSavedWindowState() ?? getDefaultWindowPosition();
+  petWindow.setPosition(initialPosition.x, initialPosition.y);
 
   if (isDev) {
     petWindow.loadURL('http://127.0.0.1:5173');
@@ -195,6 +271,7 @@ ipcMain.on('pet-drag-move', (_event, mousePosition: { x: number; y: number }) =>
 });
 
 ipcMain.on('pet-drag-end', () => {
+  saveWindowState();
   dragState = null;
 });
 
