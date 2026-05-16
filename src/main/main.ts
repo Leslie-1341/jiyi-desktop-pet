@@ -20,7 +20,7 @@ type WindowState = {
 
 const PET_WINDOW_SIZE = {
   width: 220,
-  height: 220
+  height: 300
 };
 
 let petWindow: BrowserWindow | null = null;

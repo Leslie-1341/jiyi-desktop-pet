@@ -3,6 +3,7 @@ import jiyiSpritesheet from './assets/jiyi-spritesheet.webp';
 
 const CLICK_MOVE_LIMIT = 6;
 const DOUBLE_CLICK_DELAY_MS = 260;
+const SPEECH_BUBBLE_DURATION_MS = 2200;
 const WAVING_DURATION_MS = 1200;
 const SPRITESHEET_STYLE = {
   backgroundImage: `url(${jiyiSpritesheet})`
@@ -18,9 +19,20 @@ const PET_STATE_CLASS: Record<PetState, string> = {
   study: 'study'
 };
 
+const SPEECH_LINES = [
+  '今天也要加油呀！',
+  '摸摸吉伊～',
+  '一起认真一会儿吧',
+  '嘿嘿',
+  '你已经很棒啦',
+  '休息一下也没关系',
+  '吉伊在这里陪你'
+];
+
 export default function App() {
   const [petState, setPetState] = useState<PetState>('idle');
   const [isStudyMode, setIsStudyMode] = useState(false);
+  const [speechLine, setSpeechLine] = useState<string | null>(null);
   const [wavingRunId, setWavingRunId] = useState(0);
   const pointerStart = useRef<{ x: number; y: number } | null>(null);
   const previousPointerPosition = useRef<{ x: number; y: number } | null>(null);
@@ -28,6 +40,7 @@ export default function App() {
   const didMovePastClickLimit = useRef(false);
   const lastRunningDirection = useRef<RunningDirection>('right');
   const clickTimeoutId = useRef<number | null>(null);
+  const speechTimeoutId = useRef<number | null>(null);
   const isStudyModeRef = useRef(false);
 
   useEffect(() => {
@@ -53,6 +66,10 @@ export default function App() {
     return () => {
       if (clickTimeoutId.current !== null) {
         window.clearTimeout(clickTimeoutId.current);
+      }
+
+      if (speechTimeoutId.current !== null) {
+        window.clearTimeout(speechTimeoutId.current);
       }
     };
   }, []);
@@ -101,6 +118,23 @@ export default function App() {
     clickTimeoutId.current = null;
   }
 
+  function pickSpeechLine() {
+    const nextIndex = Math.floor(Math.random() * SPEECH_LINES.length);
+    return SPEECH_LINES[nextIndex];
+  }
+
+  function showSpeechBubble() {
+    if (speechTimeoutId.current !== null) {
+      window.clearTimeout(speechTimeoutId.current);
+    }
+
+    setSpeechLine(pickSpeechLine());
+    speechTimeoutId.current = window.setTimeout(() => {
+      setSpeechLine(null);
+      speechTimeoutId.current = null;
+    }, SPEECH_BUBBLE_DURATION_MS);
+  }
+
   function returnToRestState() {
     setPetState(isStudyModeRef.current ? 'study' : 'idle');
   }
@@ -113,6 +147,7 @@ export default function App() {
     console.log('clicked');
     setPetState('waving');
     setWavingRunId((currentRunId) => currentRunId + 1);
+    showSpeechBubble();
   }
 
   function toggleStudyMode() {
@@ -215,6 +250,7 @@ export default function App() {
 
   return (
     <main className="pet-stage">
+      {speechLine ? <div className="speech-bubble">{speechLine}</div> : null}
       <button
         className="pet-button"
         aria-label="Jiyi desktop pet"
