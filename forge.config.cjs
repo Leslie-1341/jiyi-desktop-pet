@@ -3,6 +3,7 @@ module.exports = {
     name: 'Desktop Pet',
     executableName: 'Desktop Pet',
     appBundleId: 'com.desktoppet.app',
+    icon: 'src/main/assets/appIcon',
     asar: true,
     extraResource: ['src/main/assets/petTrayTemplate.png'],
     ignore: [

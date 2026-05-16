@@ -8,6 +8,19 @@ const icons = [
   { fileName: 'petTrayTemplate@2x.png', size: 36 }
 ];
 const LOGO_SCALE = 1.2;
+const appIconDir = path.join(outputDir, 'appIcon.iconset');
+const appIcons = [
+  { fileName: 'icon_16x16.png', icnsType: 'icp4', size: 16 },
+  { fileName: 'icon_16x16@2x.png', icnsType: 'icp5', size: 32 },
+  { fileName: 'icon_32x32.png', icnsType: 'icp5', size: 32 },
+  { fileName: 'icon_32x32@2x.png', icnsType: 'icp6', size: 64 },
+  { fileName: 'icon_128x128.png', icnsType: 'ic07', size: 128 },
+  { fileName: 'icon_128x128@2x.png', icnsType: 'ic08', size: 256 },
+  { fileName: 'icon_256x256.png', icnsType: 'ic08', size: 256 },
+  { fileName: 'icon_256x256@2x.png', icnsType: 'ic09', size: 512 },
+  { fileName: 'icon_512x512.png', icnsType: 'ic09', size: 512 },
+  { fileName: 'icon_512x512@2x.png', icnsType: 'ic10', size: 1024 }
+];
 
 function crc32(bytes) {
   let crc = 0xffffffff;
@@ -250,6 +263,7 @@ function encodePng(width, height, pixels) {
 }
 
 fs.mkdirSync(outputDir, { recursive: true });
+fs.mkdirSync(appIconDir, { recursive: true });
 
 for (const icon of icons) {
   const pixels = renderIcon(icon.size);
@@ -257,3 +271,25 @@ for (const icon of icons) {
   fs.writeFileSync(path.join(outputDir, icon.fileName), png);
   console.log(`${icon.fileName}: ${icon.size}x${icon.size}`);
 }
+
+const icnsChunks = [];
+
+for (const icon of appIcons) {
+  const pixels = renderIcon(icon.size);
+  const png = encodePng(icon.size, icon.size, pixels);
+  const iconPath = path.join(appIconDir, icon.fileName);
+  fs.writeFileSync(iconPath, png);
+
+  const chunkHeader = Buffer.alloc(8);
+  chunkHeader.write(icon.icnsType, 0, 4, 'ascii');
+  chunkHeader.writeUInt32BE(png.length + 8, 4);
+  icnsChunks.push(Buffer.concat([chunkHeader, png]));
+  console.log(`appIcon.iconset/${icon.fileName}: ${icon.size}x${icon.size}`);
+}
+
+const icnsSize = 8 + icnsChunks.reduce((size, chunk) => size + chunk.length, 0);
+const icnsHeader = Buffer.alloc(8);
+icnsHeader.write('icns', 0, 4, 'ascii');
+icnsHeader.writeUInt32BE(icnsSize, 4);
+fs.writeFileSync(path.join(outputDir, 'appIcon.icns'), Buffer.concat([icnsHeader, ...icnsChunks]));
+console.log('appIcon.icns');
