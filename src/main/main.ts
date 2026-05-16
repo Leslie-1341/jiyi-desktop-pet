@@ -45,8 +45,21 @@ function hidePetWindow() {
   petWindow?.hide();
 }
 
+function getOpenAtLogin() {
+  return app.getLoginItemSettings().openAtLogin;
+}
+
+function toggleOpenAtLogin() {
+  app.setLoginItemSettings({
+    openAtLogin: !getOpenAtLogin()
+  });
+
+  showTrayMenu();
+}
+
 function buildControlMenu() {
   const isVisible = Boolean(petWindow?.isVisible());
+  const openAtLogin = getOpenAtLogin();
 
   return Menu.buildFromTemplate([
     {
@@ -71,6 +84,13 @@ function buildControlMenu() {
       click: () => {
         sendPetMenuCommand('back-to-idle');
       }
+    },
+    { type: 'separator' },
+    {
+      label: '登录时自动启动',
+      type: 'checkbox',
+      checked: openAtLogin,
+      click: toggleOpenAtLogin
     },
     { type: 'separator' },
     {
