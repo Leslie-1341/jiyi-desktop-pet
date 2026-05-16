@@ -15,7 +15,7 @@ electron-builder-debug.yml
 electron-builder.env
 
 # Debug exports
-debug/idle-frames/
+debug/
 
 # Logs
 *.log

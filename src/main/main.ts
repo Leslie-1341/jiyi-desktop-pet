@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, screen } from 'electron';
+import { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, screen } from 'electron';
 import path from 'node:path';
 
 type DragState = {
@@ -8,10 +8,93 @@ type DragState = {
   startWindowY: number;
 };
 
+type PetContextMenuState = {
+  isStudyMode: boolean;
+};
+
 let petWindow: BrowserWindow | null = null;
 let dragState: DragState | null = null;
+let tray: Tray | null = null;
+let isStudyMode = false;
 
 const isDev = !app.isPackaged;
+
+function resolveTrayIconPath() {
+  if (isDev) {
+    return path.join(app.getAppPath(), 'src/main/assets/petTrayTemplate.png');
+  }
+
+  return path.join(process.resourcesPath, 'petTrayTemplate.png');
+}
+
+function sendPetMenuCommand(command: 'toggle-study' | 'back-to-idle') {
+  petWindow?.webContents.send('pet-menu-command', command);
+}
+
+function showPetWindow() {
+  if (!petWindow) {
+    createPetWindow();
+    return;
+  }
+
+  petWindow.show();
+  petWindow.focus();
+}
+
+function hidePetWindow() {
+  petWindow?.hide();
+}
+
+function buildControlMenu() {
+  const isVisible = Boolean(petWindow?.isVisible());
+
+  return Menu.buildFromTemplate([
+    {
+      label: isVisible ? '隐藏吉伊' : '显示吉伊',
+      click: () => {
+        if (petWindow?.isVisible()) {
+          hidePetWindow();
+          return;
+        }
+
+        showPetWindow();
+      }
+    },
+    {
+      label: isStudyMode ? '退出学习模式' : '进入学习模式',
+      click: () => {
+        sendPetMenuCommand('toggle-study');
+      }
+    },
+    {
+      label: '回到待机',
+      click: () => {
+        sendPetMenuCommand('back-to-idle');
+      }
+    },
+    { type: 'separator' },
+    {
+      label: '退出应用',
+      click: () => {
+        app.quit();
+      }
+    }
+  ]);
+}
+
+function showTrayMenu() {
+  tray?.popUpContextMenu(buildControlMenu());
+}
+
+function createTray() {
+  const trayIcon = nativeImage.createFromPath(resolveTrayIconPath());
+  trayIcon.setTemplateImage(true);
+
+  tray = new Tray(trayIcon);
+  tray.setToolTip('桌宠助手');
+  tray.on('click', showTrayMenu);
+  tray.on('right-click', showTrayMenu);
+}
 
 function createPetWindow() {
   petWindow = new BrowserWindow({
@@ -54,11 +137,10 @@ function createPetWindow() {
 
 app.whenReady().then(() => {
   createPetWindow();
+  createTray();
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createPetWindow();
-    }
+    showPetWindow();
   });
 });
 
@@ -94,4 +176,46 @@ ipcMain.on('pet-drag-move', (_event, mousePosition: { x: number; y: number }) =>
 
 ipcMain.on('pet-drag-end', () => {
   dragState = null;
+});
+
+ipcMain.on('pet-study-mode-changed', (_event, nextIsStudyMode: boolean) => {
+  isStudyMode = nextIsStudyMode;
+});
+
+ipcMain.on('pet-show-context-menu', (event, menuState: PetContextMenuState) => {
+  const sourceWindow = BrowserWindow.fromWebContents(event.sender);
+
+  if (!sourceWindow) {
+    return;
+  }
+
+  const menu = Menu.buildFromTemplate([
+    {
+      label: menuState.isStudyMode ? '退出学习模式' : '进入学习模式',
+      click: () => {
+        sendPetMenuCommand('toggle-study');
+      }
+    },
+    {
+      label: '回到待机',
+      click: () => {
+        sendPetMenuCommand('back-to-idle');
+      }
+    },
+    { type: 'separator' },
+    {
+      label: '隐藏吉伊',
+      click: () => {
+        hidePetWindow();
+      }
+    },
+    {
+      label: '退出应用',
+      click: () => {
+        app.quit();
+      }
+    }
+  ]);
+
+  menu.popup({ window: sourceWindow });
 });
