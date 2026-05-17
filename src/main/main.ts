@@ -5,6 +5,7 @@ import {
   createIdleFocusTimerState,
   type FocusTimerBaseMode,
   type FocusTimerNotificationKind,
+  type FocusTimerPreferences,
   type FocusTimerState
 } from '../shared/focusTimer';
 import { defaultPetId, isKnownPetId, petRegistry } from '../shared/petRegistry';
@@ -60,6 +61,7 @@ let isStudyMode = false;
 let activePetId = defaultPetId;
 let focusTimerState = createIdleFocusTimerState();
 let focusStats: FocusStats | null = null;
+let focusTimerPreferences: FocusTimerPreferences = { autoAdvance: false };
 
 const isDev = !app.isPackaged;
 
@@ -77,6 +79,45 @@ function getFocusTimerStatePath() {
 
 function getFocusStatsPath() {
   return path.join(app.getPath('userData'), 'focus-stats.json');
+}
+
+function getFocusTimerPreferencesPath() {
+  return path.join(app.getPath('userData'), 'focus-preferences.json');
+}
+
+function isFocusTimerPreferences(value: unknown): value is FocusTimerPreferences {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const preferences = value as Partial<FocusTimerPreferences>;
+  return typeof preferences.autoAdvance === 'boolean';
+}
+
+function readFocusTimerPreferences() {
+  try {
+    const rawPreferences = fs.readFileSync(getFocusTimerPreferencesPath(), 'utf8');
+    const parsedPreferences = JSON.parse(rawPreferences);
+
+    if (isFocusTimerPreferences(parsedPreferences)) {
+      return parsedPreferences;
+    }
+  } catch {
+    return { autoAdvance: false };
+  }
+
+  return { autoAdvance: false };
+}
+
+function saveFocusTimerPreferences() {
+  try {
+    fs.writeFileSync(
+      getFocusTimerPreferencesPath(),
+      `${JSON.stringify(focusTimerPreferences, null, 2)}\n`
+    );
+  } catch (error) {
+    console.error('Failed to save focus timer preferences:', error);
+  }
 }
 
 function getLocalDateKey(date = new Date()) {
@@ -328,6 +369,10 @@ function sendActivePetChanged() {
   petWindow?.webContents.send('pet-active-pet-changed', activePetId);
 }
 
+function sendFocusTimerPreferencesChanged() {
+  petWindow?.webContents.send('pet-focus-timer-preferences-changed', focusTimerPreferences);
+}
+
 function setActivePetId(nextPetId: string) {
   if (!isKnownPetId(nextPetId)) {
     return;
@@ -341,6 +386,12 @@ function setActivePetId(nextPetId: string) {
 function setFocusTimerState(nextFocusTimerState: FocusTimerState) {
   focusTimerState = nextFocusTimerState;
   saveFocusTimerState();
+}
+
+function setFocusTimerAutoAdvance(autoAdvance: boolean) {
+  focusTimerPreferences = { autoAdvance };
+  saveFocusTimerPreferences();
+  sendFocusTimerPreferencesChanged();
 }
 
 function showFocusTimerNotification(kind: FocusTimerNotificationKind) {
@@ -460,6 +511,15 @@ function buildControlMenu() {
             sendPetMenuCommand('open-custom-focus-timer');
           }
         },
+        {
+          label: '自动进入下一阶段',
+          type: 'checkbox',
+          checked: focusTimerPreferences.autoAdvance,
+          click: (menuItem) => {
+            setFocusTimerAutoAdvance(menuItem.checked);
+            showTrayMenu();
+          }
+        },
         { type: 'separator' },
         {
           label: pauseTimerLabel,
@@ -559,6 +619,7 @@ function createPetWindow() {
   petWindow.webContents.on('did-finish-load', () => {
     sendWindowVisibility();
     sendActivePetChanged();
+    sendFocusTimerPreferencesChanged();
   });
 }
 
@@ -566,6 +627,7 @@ app.whenReady().then(() => {
   activePetId = readPetPreferences()?.activePetId ?? defaultPetId;
   focusTimerState = readFocusTimerState() ?? createIdleFocusTimerState();
   focusStats = readFocusStats();
+  focusTimerPreferences = readFocusTimerPreferences();
   createPetWindow();
   createTray();
 
@@ -622,6 +684,8 @@ ipcMain.on('pet-set-active-pet-id', (_event, nextPetId: string) => {
 });
 
 ipcMain.handle('pet-get-focus-timer-state', () => focusTimerState);
+
+ipcMain.handle('pet-get-focus-timer-preferences', () => focusTimerPreferences);
 
 ipcMain.on('pet-set-focus-timer-state', (_event, nextFocusTimerState: FocusTimerState) => {
   if (!isFocusTimerState(nextFocusTimerState)) {

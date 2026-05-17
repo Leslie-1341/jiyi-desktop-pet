@@ -3,6 +3,7 @@ export {};
 import type {
   FocusTimerBaseMode,
   FocusTimerNotificationKind,
+  FocusTimerPreferences,
   FocusTimerState
 } from '../shared/focusTimer';
 
@@ -30,6 +31,10 @@ declare global {
       setActivePetId: (petId: string) => void;
       onActivePetChanged: (callback: (petId: string) => void) => () => void;
       getFocusTimerState: () => Promise<FocusTimerState>;
+      getFocusTimerPreferences: () => Promise<FocusTimerPreferences>;
+      onFocusTimerPreferencesChanged: (
+        callback: (preferences: FocusTimerPreferences) => void
+      ) => () => void;
       setFocusTimerState: (timerState: FocusTimerState) => void;
       showFocusTimerNotification: (kind: FocusTimerNotificationKind) => void;
       recordCompletedTimer: (mode: FocusTimerBaseMode, durationMs: number) => void;

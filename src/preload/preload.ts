@@ -11,6 +11,7 @@ type PetMenuCommand =
   | 'toggle-focus-timer-pause'
   | 'end-focus-timer';
 type FocusTimerBaseMode = import('../shared/focusTimer').FocusTimerBaseMode;
+type FocusTimerPreferences = import('../shared/focusTimer').FocusTimerPreferences;
 type FocusTimerState = import('../shared/focusTimer').FocusTimerState;
 type FocusTimerNotificationKind = import('../shared/focusTimer').FocusTimerNotificationKind;
 
@@ -52,6 +53,20 @@ contextBridge.exposeInMainWorld('desktopPet', {
   },
   getFocusTimerState: () => {
     return ipcRenderer.invoke('pet-get-focus-timer-state') as Promise<FocusTimerState>;
+  },
+  getFocusTimerPreferences: () => {
+    return ipcRenderer.invoke('pet-get-focus-timer-preferences') as Promise<FocusTimerPreferences>;
+  },
+  onFocusTimerPreferencesChanged: (callback: (preferences: FocusTimerPreferences) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, preferences: FocusTimerPreferences) => {
+      callback(preferences);
+    };
+
+    ipcRenderer.on('pet-focus-timer-preferences-changed', listener);
+
+    return () => {
+      ipcRenderer.removeListener('pet-focus-timer-preferences-changed', listener);
+    };
   },
   setFocusTimerState: (timerState: FocusTimerState) => {
     ipcRenderer.send('pet-set-focus-timer-state', timerState);

@@ -12,6 +12,10 @@ export type FocusTimerState = {
 
 export type FocusTimerNotificationKind = FocusTimerBaseMode;
 
+export type FocusTimerPreferences = {
+  autoAdvance: boolean;
+};
+
 export const FOCUS_TIMER_DURATIONS_MS = {
   focus: 25 * 60 * 1000,
   break: 5 * 60 * 1000

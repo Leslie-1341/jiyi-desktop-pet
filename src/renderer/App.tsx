@@ -10,6 +10,7 @@ import {
   FOCUS_TIMER_DURATIONS_MS,
   getFocusTimerActiveMode,
   type FocusTimerBaseMode,
+  type FocusTimerPreferences,
   type FocusTimerState
 } from '../shared/focusTimer';
 import { defaultPetId, getPetConfig, petConfigs, type PetConfig, type PetState } from './pets';
@@ -36,6 +37,9 @@ type CustomTimerForm = {
   mode: FocusTimerBaseMode;
   minutes: string;
   error: string | null;
+};
+type StartFocusTimerOptions = {
+  preserveSpeech?: boolean;
 };
 
 function getAnimationName(petId: string, state: PetState) {
@@ -91,6 +95,9 @@ export default function App() {
   const [focusTimerState, setFocusTimerState] = useState<FocusTimerState>(() =>
     createIdleFocusTimerState()
   );
+  const [focusTimerPreferences, setFocusTimerPreferences] = useState<FocusTimerPreferences>({
+    autoAdvance: false
+  });
   const [customTimerForm, setCustomTimerForm] = useState<CustomTimerForm>({
     isOpen: false,
     mode: 'focus',
@@ -115,6 +122,7 @@ export default function App() {
   const petStateRef = useRef<PetState>('idle');
   const speechLineRef = useRef<string | null>(null);
   const focusTimerStateRef = useRef<FocusTimerState>(focusTimerState);
+  const focusTimerPreferencesRef = useRef<FocusTimerPreferences>(focusTimerPreferences);
   const currentPet = getPetConfig(activePetId);
   const petAnimationCss = useMemo(() => buildPetAnimationCss(currentPet), [currentPet]);
 
@@ -138,6 +146,10 @@ export default function App() {
   useEffect(() => {
     focusTimerStateRef.current = focusTimerState;
   }, [focusTimerState]);
+
+  useEffect(() => {
+    focusTimerPreferencesRef.current = focusTimerPreferences;
+  }, [focusTimerPreferences]);
 
   useEffect(() => {
     if (petState !== 'waving' && petState !== 'jumping') {
@@ -272,6 +284,29 @@ export default function App() {
 
     return () => {
       isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    window.desktopPet.getFocusTimerPreferences().then((savedPreferences) => {
+      if (isMounted) {
+        focusTimerPreferencesRef.current = savedPreferences;
+        setFocusTimerPreferences(savedPreferences);
+      }
+    });
+
+    const removePreferencesListener = window.desktopPet.onFocusTimerPreferencesChanged(
+      (nextPreferences) => {
+        focusTimerPreferencesRef.current = nextPreferences;
+        setFocusTimerPreferences(nextPreferences);
+      }
+    );
+
+    return () => {
+      isMounted = false;
+      removePreferencesListener();
     };
   }, []);
 
@@ -476,7 +511,11 @@ export default function App() {
     startCustomTimer();
   }
 
-  function startFocusTimer(mode: FocusTimerBaseMode, durationMs: number) {
+  function startFocusTimer(
+    mode: FocusTimerBaseMode,
+    durationMs: number,
+    options: StartFocusTimerOptions = {}
+  ) {
     if (hasActiveFocusTimer()) {
       return;
     }
@@ -485,7 +524,9 @@ export default function App() {
     updateFocusTimerState(nextTimerState);
     clearPendingSingleClick();
     clearLongPressTimer();
-    hideSpeechBubble();
+    if (!options.preserveSpeech) {
+      hideSpeechBubble();
+    }
     closeCustomTimerForm();
     setTimerNow(Date.now());
 
@@ -552,6 +593,12 @@ export default function App() {
 
   function completeFocusTimer(mode: FocusTimerBaseMode) {
     const completedDurationMs = focusTimerStateRef.current.durationMs;
+    const shouldAutoAdvance = focusTimerPreferencesRef.current.autoAdvance;
+    const nextMode: FocusTimerBaseMode = mode === 'focus' ? 'break' : 'focus';
+    const nextDurationMs =
+      nextMode === 'focus'
+        ? FOCUS_TIMER_PRESET_DURATIONS_MS.focus25
+        : FOCUS_TIMER_PRESET_DURATIONS_MS.break5;
 
     updateFocusTimerState(createIdleFocusTimerState());
     isStudyModeRef.current = false;
@@ -563,6 +610,10 @@ export default function App() {
     });
     window.desktopPet.recordCompletedTimer(mode, completedDurationMs);
     window.desktopPet.showFocusTimerNotification(mode);
+
+    if (shouldAutoAdvance) {
+      startFocusTimer(nextMode, nextDurationMs, { preserveSpeech: true });
+    }
   }
 
   function restoreFocusTimerState(savedTimerState: FocusTimerState) {
