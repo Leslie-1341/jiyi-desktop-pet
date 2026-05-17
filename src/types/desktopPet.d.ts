@@ -11,6 +11,9 @@ declare global {
       showContextMenu: (state: { isStudyMode: boolean }) => void;
       setStudyMode: (isStudyMode: boolean) => void;
       getWindowVisibility: () => Promise<boolean>;
+      getActivePetId: () => Promise<string>;
+      setActivePetId: (petId: string) => void;
+      onActivePetChanged: (callback: (petId: string) => void) => () => void;
       onWindowVisibility: (callback: (isVisible: boolean) => void) => () => void;
       onMenuCommand: (callback: (command: PetMenuCommand) => void) => () => void;
     };

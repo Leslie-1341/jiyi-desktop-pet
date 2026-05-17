@@ -1,4 +1,11 @@
-export type PetState = 'idle' | 'shy' | 'waving' | 'runningRight' | 'runningLeft' | 'study';
+export type PetState =
+  | 'idle'
+  | 'shy'
+  | 'waving'
+  | 'jumping'
+  | 'runningRight'
+  | 'runningLeft'
+  | 'study';
 
 export type PetFrame = {
   column: number;

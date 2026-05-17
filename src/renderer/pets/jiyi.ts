@@ -53,6 +53,18 @@ export const jiyiPetConfig: PetConfig = {
         frame(3, 3)
       ]
     },
+    jumping: {
+      durationMs: 900,
+      loop: false,
+      fillMode: 'forwards',
+      frames: [
+        frame(0, 4),
+        frame(1, 4),
+        frame(2, 4),
+        frame(3, 4),
+        frame(4, 4)
+      ]
+    },
     runningRight: {
       durationMs: 1200,
       loop: true,

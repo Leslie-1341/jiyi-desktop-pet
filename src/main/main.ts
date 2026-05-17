@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, screen } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
+import { defaultPetId, isKnownPetId, petRegistry } from '../shared/petRegistry';
 
 type DragState = {
   startMouseX: number;
@@ -18,6 +19,10 @@ type WindowState = {
   y: number;
 };
 
+type PetPreferences = {
+  activePetId: string;
+};
+
 const PET_WINDOW_SIZE = {
   width: 220,
   height: 300
@@ -27,11 +32,46 @@ let petWindow: BrowserWindow | null = null;
 let dragState: DragState | null = null;
 let tray: Tray | null = null;
 let isStudyMode = false;
+let activePetId = defaultPetId;
 
 const isDev = !app.isPackaged;
 
 function getWindowStatePath() {
   return path.join(app.getPath('userData'), 'window-state.json');
+}
+
+function getPetPreferencesPath() {
+  return path.join(app.getPath('userData'), 'pet-preferences.json');
+}
+
+function readPetPreferences() {
+  try {
+    const rawPreferences = fs.readFileSync(getPetPreferencesPath(), 'utf8');
+    const parsedPreferences = JSON.parse(rawPreferences) as Partial<PetPreferences>;
+
+    if (
+      typeof parsedPreferences.activePetId === 'string' &&
+      isKnownPetId(parsedPreferences.activePetId)
+    ) {
+      return parsedPreferences as PetPreferences;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function savePetPreferences() {
+  const preferences: PetPreferences = {
+    activePetId
+  };
+
+  try {
+    fs.writeFileSync(getPetPreferencesPath(), `${JSON.stringify(preferences, null, 2)}\n`);
+  } catch (error) {
+    console.error('Failed to save pet preferences:', error);
+  }
 }
 
 function getDefaultWindowPosition() {
@@ -112,6 +152,20 @@ function sendWindowVisibility() {
   petWindow?.webContents.send('pet-window-visibility-changed', Boolean(petWindow?.isVisible()));
 }
 
+function sendActivePetChanged() {
+  petWindow?.webContents.send('pet-active-pet-changed', activePetId);
+}
+
+function setActivePetId(nextPetId: string) {
+  if (!isKnownPetId(nextPetId)) {
+    return;
+  }
+
+  activePetId = nextPetId;
+  savePetPreferences();
+  sendActivePetChanged();
+}
+
 function showPetWindow() {
   if (!petWindow) {
     createPetWindow();
@@ -165,6 +219,18 @@ function buildControlMenu() {
       click: () => {
         sendPetMenuCommand('back-to-idle');
       }
+    },
+    {
+      label: '切换桌宠',
+      submenu: petRegistry.map((pet) => ({
+        label: pet.displayName,
+        type: 'radio' as const,
+        checked: pet.id === activePetId,
+        click: () => {
+          setActivePetId(pet.id);
+          showTrayMenu();
+        }
+      }))
     },
     { type: 'separator' },
     {
@@ -236,10 +302,14 @@ function createPetWindow() {
 
   petWindow.on('show', sendWindowVisibility);
   petWindow.on('hide', sendWindowVisibility);
-  petWindow.webContents.on('did-finish-load', sendWindowVisibility);
+  petWindow.webContents.on('did-finish-load', () => {
+    sendWindowVisibility();
+    sendActivePetChanged();
+  });
 }
 
 app.whenReady().then(() => {
+  activePetId = readPetPreferences()?.activePetId ?? defaultPetId;
   createPetWindow();
   createTray();
 
@@ -288,6 +358,12 @@ ipcMain.on('pet-study-mode-changed', (_event, nextIsStudyMode: boolean) => {
 });
 
 ipcMain.handle('pet-get-window-visibility', () => Boolean(petWindow?.isVisible()));
+
+ipcMain.handle('pet-get-active-pet-id', () => activePetId);
+
+ipcMain.on('pet-set-active-pet-id', (_event, nextPetId: string) => {
+  setActivePetId(nextPetId);
+});
 
 ipcMain.on('pet-show-context-menu', (event, menuState: PetContextMenuState) => {
   const sourceWindow = BrowserWindow.fromWebContents(event.sender);

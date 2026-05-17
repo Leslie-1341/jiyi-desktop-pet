@@ -1,13 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent } from 'react';
-import { activePetConfig, type PetState } from './pets';
+import { defaultPetId, getPetConfig, petConfigs, type PetConfig, type PetState } from './pets';
 
 const CLICK_MOVE_LIMIT = 6;
 const DOUBLE_CLICK_DELAY_MS = 260;
+const LONG_PRESS_DURATION_MS = 600;
 const SPEECH_BUBBLE_DURATION_MS = 2200;
 const AUTO_SPEECH_MIN_DELAY_MS = 45_000;
 const AUTO_SPEECH_MAX_DELAY_MS = 90_000;
-const currentPet = activePetConfig;
 type RunningDirection = 'right' | 'left';
 
 function getAnimationName(petId: string, state: PetState) {
@@ -18,8 +18,12 @@ function formatPercent(value: number) {
   return Number(value.toFixed(2));
 }
 
-function buildPetAnimationCss() {
-  return Object.entries(currentPet.states)
+function getValidPetId(petId: string) {
+  return petId in petConfigs ? petId : defaultPetId;
+}
+
+function buildPetAnimationCss(petConfig: PetConfig) {
+  return Object.entries(petConfig.states)
     .map(([state, animation]) => {
       const segmentSize = 100 / animation.frames.length;
       const segments = animation.frames
@@ -28,26 +32,26 @@ function buildPetAnimationCss() {
           const end = index === animation.frames.length - 1
             ? 100
             : formatPercent((index + 1) * segmentSize - 0.01);
-          const x = frame.column * currentPet.frameWidth;
-          const y = frame.row * currentPet.frameHeight;
+          const x = frame.column * petConfig.frameWidth;
+          const y = frame.row * petConfig.frameHeight;
 
           return `${start}%, ${end}% { background-position: -${x}px -${y}px; }`;
         })
         .join('\n');
 
-      return `@keyframes ${getAnimationName(currentPet.id, state as PetState)} {\n${segments}\n}`;
+      return `@keyframes ${getAnimationName(petConfig.id, state as PetState)} {\n${segments}\n}`;
     })
     .join('\n');
 }
 
-const petAnimationCss = buildPetAnimationCss();
-
 export default function App() {
+  const [activePetId, setActivePetId] = useState(defaultPetId);
   const [petState, setPetState] = useState<PetState>('idle');
   const [isStudyMode, setIsStudyMode] = useState(false);
   const [isWindowVisible, setIsWindowVisible] = useState(true);
   const [speechLine, setSpeechLine] = useState<string | null>(null);
   const [wavingRunId, setWavingRunId] = useState(0);
+  const [jumpingRunId, setJumpingRunId] = useState(0);
   const petButtonRef = useRef<HTMLButtonElement | null>(null);
   const pointerStart = useRef<{ x: number; y: number } | null>(null);
   const previousPointerPosition = useRef<{ x: number; y: number } | null>(null);
@@ -56,12 +60,16 @@ export default function App() {
   const didMovePastClickLimit = useRef(false);
   const lastRunningDirection = useRef<RunningDirection>('right');
   const clickTimeoutId = useRef<number | null>(null);
+  const longPressTimeoutId = useRef<number | null>(null);
+  const didTriggerLongPress = useRef(false);
   const speechTimeoutId = useRef<number | null>(null);
   const autoSpeechTimeoutId = useRef<number | null>(null);
   const isStudyModeRef = useRef(false);
   const isWindowVisibleRef = useRef(true);
   const petStateRef = useRef<PetState>('idle');
   const speechLineRef = useRef<string | null>(null);
+  const currentPet = getPetConfig(activePetId);
+  const petAnimationCss = useMemo(() => buildPetAnimationCss(currentPet), [currentPet]);
 
   useEffect(() => {
     isStudyModeRef.current = isStudyMode;
@@ -81,24 +89,30 @@ export default function App() {
   }, [speechLine]);
 
   useEffect(() => {
-    if (petState !== 'waving') {
+    if (petState !== 'waving' && petState !== 'jumping') {
       return;
     }
 
+    const animationDuration =
+      petState === 'waving'
+        ? currentPet.states.waving.durationMs
+        : currentPet.states.jumping.durationMs;
     const timeoutId = window.setTimeout(() => {
-      updatePetState(getRestState());
-    }, currentPet.states.waving.durationMs);
+      updatePetState(getRestState(isStudyModeRef.current, petState === 'jumping'));
+    }, animationDuration);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [petState, wavingRunId]);
+  }, [petState, wavingRunId, jumpingRunId, activePetId]);
 
   useEffect(() => {
     return () => {
       if (clickTimeoutId.current !== null) {
         window.clearTimeout(clickTimeoutId.current);
       }
+
+      clearLongPressTimer();
 
       if (speechTimeoutId.current !== null) {
         window.clearTimeout(speechTimeoutId.current);
@@ -156,6 +170,32 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let isMounted = true;
+
+    window.desktopPet.getActivePetId().then((savedPetId) => {
+      if (isMounted) {
+        setActivePetId(getValidPetId(savedPetId));
+      }
+    });
+
+    const removeActivePetListener = window.desktopPet.onActivePetChanged((nextPetId) => {
+      setActivePetId(getValidPetId(nextPetId));
+    });
+
+    return () => {
+      isMounted = false;
+      removeActivePetListener();
+    };
+  }, []);
+
+  useEffect(() => {
+    clearPendingSingleClick();
+    hideSpeechBubble();
+    updatePetState(getRestState());
+    setWavingRunId((currentRunId) => currentRunId + 1);
+  }, [activePetId]);
+
+  useEffect(() => {
     function isPointInsidePet(event: globalThis.MouseEvent) {
       const button = petButtonRef.current;
 
@@ -197,6 +237,15 @@ export default function App() {
     setPetState(nextPetState);
   }
 
+  function clearLongPressTimer() {
+    if (longPressTimeoutId.current === null) {
+      return;
+    }
+
+    window.clearTimeout(longPressTimeoutId.current);
+    longPressTimeoutId.current = null;
+  }
+
   function getScreenPosition(event: PointerEvent) {
     return {
       x: event.screenX,
@@ -214,7 +263,29 @@ export default function App() {
     previousPointerPosition.current = pointerStart.current;
     isDragging.current = true;
     didMovePastClickLimit.current = false;
+    didTriggerLongPress.current = false;
     window.desktopPet.startDrag(pointerStart.current);
+
+    if (!isStudyModeRef.current) {
+      clearLongPressTimer();
+      longPressTimeoutId.current = window.setTimeout(() => {
+        longPressTimeoutId.current = null;
+
+        if (
+          pointerStart.current &&
+          !didMovePastClickLimit.current &&
+          !isStudyModeRef.current &&
+          petStateRef.current !== 'runningRight' &&
+          petStateRef.current !== 'runningLeft'
+        ) {
+          didTriggerLongPress.current = true;
+          clearPendingSingleClick();
+          hideSpeechBubble();
+          updatePetState('jumping');
+          setJumpingRunId((currentRunId) => currentRunId + 1);
+        }
+      }, LONG_PRESS_DURATION_MS);
+    }
   }
 
   function clearPendingSingleClick() {
@@ -301,12 +372,17 @@ export default function App() {
     }, SPEECH_BUBBLE_DURATION_MS);
   }
 
-  function getRestState(nextIsStudyMode = isStudyModeRef.current): PetState {
+  function getRestState(
+    nextIsStudyMode = isStudyModeRef.current,
+    allowShyWhilePressed = false
+  ): PetState {
     if (nextIsStudyMode) {
       return 'study';
     }
 
-    return isPointerOverPet.current && !isDragging.current ? 'shy' : 'idle';
+    const canReturnToShy = !isDragging.current || allowShyWhilePressed;
+
+    return isPointerOverPet.current && canReturnToShy ? 'shy' : 'idle';
   }
 
   function returnToRestState() {
@@ -319,6 +395,7 @@ export default function App() {
     }
 
     console.log('clicked');
+    clearLongPressTimer();
     updatePetState('waving');
     setWavingRunId((currentRunId) => currentRunId + 1);
     showSpeechBubble();
@@ -328,6 +405,7 @@ export default function App() {
     setIsStudyMode((currentStudyMode) => {
       const nextStudyMode = !currentStudyMode;
       isStudyModeRef.current = nextStudyMode;
+      clearLongPressTimer();
       updatePetState(getRestState(nextStudyMode));
 
       if (nextStudyMode) {
@@ -365,6 +443,7 @@ export default function App() {
 
     if (movedX > CLICK_MOVE_LIMIT || movedY > CLICK_MOVE_LIMIT) {
       didMovePastClickLimit.current = true;
+      clearLongPressTimer();
       clearPendingSingleClick();
 
       if (deltaX > 0) {
@@ -405,14 +484,20 @@ export default function App() {
     didMovePastClickLimit.current = false;
     window.desktopPet.endDrag();
 
-    if (isClick) {
+    if (didTriggerLongPress.current) {
+      didTriggerLongPress.current = false;
+    } else if (isClick) {
       handlePetClick();
     } else {
       returnToRestState();
     }
+
+    clearLongPressTimer();
   }
 
   function handlePointerCancel() {
+    clearLongPressTimer();
+    didTriggerLongPress.current = false;
     isDragging.current = false;
     pointerStart.current = null;
     previousPointerPosition.current = null;
@@ -483,7 +568,7 @@ export default function App() {
         onContextMenu={handleContextMenu}
       >
         <span
-          key={`${currentPet.id}-${petState}-${wavingRunId}`}
+          key={`${currentPet.id}-${petState}-${wavingRunId}-${jumpingRunId}`}
           className={`pet-sprite pet-sprite--${petState}`}
           style={petSpriteStyle}
         />

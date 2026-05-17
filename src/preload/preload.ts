@@ -21,6 +21,23 @@ contextBridge.exposeInMainWorld('desktopPet', {
   getWindowVisibility: () => {
     return ipcRenderer.invoke('pet-get-window-visibility') as Promise<boolean>;
   },
+  getActivePetId: () => {
+    return ipcRenderer.invoke('pet-get-active-pet-id') as Promise<string>;
+  },
+  setActivePetId: (petId: string) => {
+    ipcRenderer.send('pet-set-active-pet-id', petId);
+  },
+  onActivePetChanged: (callback: (petId: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, petId: string) => {
+      callback(petId);
+    };
+
+    ipcRenderer.on('pet-active-pet-changed', listener);
+
+    return () => {
+      ipcRenderer.removeListener('pet-active-pet-changed', listener);
+    };
+  },
   onWindowVisibility: (callback: (isVisible: boolean) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, isVisible: boolean) => {
       callback(isVisible);
