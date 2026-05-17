@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 type PetMenuCommand = 'toggle-study' | 'back-to-idle';
 
-contextBridge.exposeInMainWorld('jiyiPet', {
+contextBridge.exposeInMainWorld('desktopPet', {
   startDrag: (position: { x: number; y: number }) => {
     ipcRenderer.send('pet-drag-start', position);
   },

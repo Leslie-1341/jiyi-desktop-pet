@@ -1,35 +1,46 @@
-import { MouseEvent, PointerEvent, useEffect, useRef, useState } from 'react';
-import jiyiSpritesheet from './assets/jiyi-spritesheet.webp';
+import { useEffect, useRef, useState } from 'react';
+import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent } from 'react';
+import { activePetConfig, type PetState } from './pets';
 
 const CLICK_MOVE_LIMIT = 6;
 const DOUBLE_CLICK_DELAY_MS = 260;
 const SPEECH_BUBBLE_DURATION_MS = 2200;
 const AUTO_SPEECH_MIN_DELAY_MS = 45_000;
 const AUTO_SPEECH_MAX_DELAY_MS = 90_000;
-const WAVING_DURATION_MS = 1200;
-const SPRITESHEET_STYLE = {
-  backgroundImage: `url(${jiyiSpritesheet})`
-};
-type PetState = 'idle' | 'waving' | 'runningRight' | 'runningLeft' | 'study';
+const currentPet = activePetConfig;
 type RunningDirection = 'right' | 'left';
 
-const PET_STATE_CLASS: Record<PetState, string> = {
-  idle: 'idle',
-  waving: 'waving',
-  runningRight: 'running-right',
-  runningLeft: 'running-left',
-  study: 'study'
-};
+function getAnimationName(petId: string, state: PetState) {
+  return `pet-${petId}-${state}`;
+}
 
-const SPEECH_LINES = [
-  '今天也要加油呀！',
-  '摸摸吉伊～',
-  '一起认真一会儿吧',
-  '嘿嘿',
-  '你已经很棒啦',
-  '休息一下也没关系',
-  '吉伊在这里陪你'
-];
+function formatPercent(value: number) {
+  return Number(value.toFixed(2));
+}
+
+function buildPetAnimationCss() {
+  return Object.entries(currentPet.states)
+    .map(([state, animation]) => {
+      const segmentSize = 100 / animation.frames.length;
+      const segments = animation.frames
+        .map((frame, index) => {
+          const start = formatPercent(index * segmentSize);
+          const end = index === animation.frames.length - 1
+            ? 100
+            : formatPercent((index + 1) * segmentSize - 0.01);
+          const x = frame.column * currentPet.frameWidth;
+          const y = frame.row * currentPet.frameHeight;
+
+          return `${start}%, ${end}% { background-position: -${x}px -${y}px; }`;
+        })
+        .join('\n');
+
+      return `@keyframes ${getAnimationName(currentPet.id, state as PetState)} {\n${segments}\n}`;
+    })
+    .join('\n');
+}
+
+const petAnimationCss = buildPetAnimationCss();
 
 export default function App() {
   const [petState, setPetState] = useState<PetState>('idle');
@@ -37,9 +48,11 @@ export default function App() {
   const [isWindowVisible, setIsWindowVisible] = useState(true);
   const [speechLine, setSpeechLine] = useState<string | null>(null);
   const [wavingRunId, setWavingRunId] = useState(0);
+  const petButtonRef = useRef<HTMLButtonElement | null>(null);
   const pointerStart = useRef<{ x: number; y: number } | null>(null);
   const previousPointerPosition = useRef<{ x: number; y: number } | null>(null);
   const isDragging = useRef(false);
+  const isPointerOverPet = useRef(false);
   const didMovePastClickLimit = useRef(false);
   const lastRunningDirection = useRef<RunningDirection>('right');
   const clickTimeoutId = useRef<number | null>(null);
@@ -52,7 +65,7 @@ export default function App() {
 
   useEffect(() => {
     isStudyModeRef.current = isStudyMode;
-    window.jiyiPet.setStudyMode(isStudyMode);
+    window.desktopPet.setStudyMode(isStudyMode);
   }, [isStudyMode]);
 
   useEffect(() => {
@@ -73,8 +86,8 @@ export default function App() {
     }
 
     const timeoutId = window.setTimeout(() => {
-      setPetState(isStudyModeRef.current ? 'study' : 'idle');
-    }, WAVING_DURATION_MS);
+      updatePetState(getRestState());
+    }, currentPet.states.waving.durationMs);
 
     return () => {
       window.clearTimeout(timeoutId);
@@ -98,13 +111,13 @@ export default function App() {
   useEffect(() => {
     let isMounted = true;
 
-    window.jiyiPet.getWindowVisibility().then((nextIsVisible) => {
+    window.desktopPet.getWindowVisibility().then((nextIsVisible) => {
       if (isMounted) {
         setIsWindowVisible(nextIsVisible);
       }
     });
 
-    const removeWindowVisibilityListener = window.jiyiPet.onWindowVisibility((nextIsVisible) => {
+    const removeWindowVisibilityListener = window.desktopPet.onWindowVisibility((nextIsVisible) => {
       setIsWindowVisible(nextIsVisible);
     });
 
@@ -128,7 +141,7 @@ export default function App() {
   }, [isStudyMode, isWindowVisible, petState, speechLine]);
 
   useEffect(() => {
-    return window.jiyiPet.onMenuCommand((command) => {
+    return window.desktopPet.onMenuCommand((command) => {
       if (command === 'toggle-study') {
         clearPendingSingleClick();
         toggleStudyMode();
@@ -138,9 +151,51 @@ export default function App() {
       clearPendingSingleClick();
       isStudyModeRef.current = false;
       setIsStudyMode(false);
-      setPetState('idle');
+      updatePetState('idle');
     });
   }, []);
+
+  useEffect(() => {
+    function isPointInsidePet(event: globalThis.MouseEvent) {
+      const button = petButtonRef.current;
+
+      if (!button) {
+        return false;
+      }
+
+      const rect = button.getBoundingClientRect();
+
+      return (
+        event.clientX >= rect.left &&
+        event.clientX <= rect.right &&
+        event.clientY >= rect.top &&
+        event.clientY <= rect.bottom
+      );
+    }
+
+    function handleWindowMouseMove(event: globalThis.MouseEvent) {
+      updatePointerOverPet(isPointInsidePet(event));
+    }
+
+    function handleWindowMouseLeave() {
+      updatePointerOverPet(false);
+    }
+
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mouseleave', handleWindowMouseLeave);
+    document.addEventListener('mouseleave', handleWindowMouseLeave);
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('mouseleave', handleWindowMouseLeave);
+      document.removeEventListener('mouseleave', handleWindowMouseLeave);
+    };
+  }, []);
+
+  function updatePetState(nextPetState: PetState) {
+    petStateRef.current = nextPetState;
+    setPetState(nextPetState);
+  }
 
   function getScreenPosition(event: PointerEvent) {
     return {
@@ -159,7 +214,7 @@ export default function App() {
     previousPointerPosition.current = pointerStart.current;
     isDragging.current = true;
     didMovePastClickLimit.current = false;
-    window.jiyiPet.startDrag(pointerStart.current);
+    window.desktopPet.startDrag(pointerStart.current);
   }
 
   function clearPendingSingleClick() {
@@ -172,8 +227,8 @@ export default function App() {
   }
 
   function pickSpeechLine() {
-    const nextIndex = Math.floor(Math.random() * SPEECH_LINES.length);
-    return SPEECH_LINES[nextIndex];
+    const nextIndex = Math.floor(Math.random() * currentPet.speechLines.length);
+    return currentPet.speechLines[nextIndex];
   }
 
   function clearAutoSpeechTimer() {
@@ -246,8 +301,16 @@ export default function App() {
     }, SPEECH_BUBBLE_DURATION_MS);
   }
 
+  function getRestState(nextIsStudyMode = isStudyModeRef.current): PetState {
+    if (nextIsStudyMode) {
+      return 'study';
+    }
+
+    return isPointerOverPet.current && !isDragging.current ? 'shy' : 'idle';
+  }
+
   function returnToRestState() {
-    setPetState(isStudyModeRef.current ? 'study' : 'idle');
+    updatePetState(getRestState());
   }
 
   function handleConfirmedSingleClick() {
@@ -256,7 +319,7 @@ export default function App() {
     }
 
     console.log('clicked');
-    setPetState('waving');
+    updatePetState('waving');
     setWavingRunId((currentRunId) => currentRunId + 1);
     showSpeechBubble();
   }
@@ -265,7 +328,7 @@ export default function App() {
     setIsStudyMode((currentStudyMode) => {
       const nextStudyMode = !currentStudyMode;
       isStudyModeRef.current = nextStudyMode;
-      setPetState(nextStudyMode ? 'study' : 'idle');
+      updatePetState(getRestState(nextStudyMode));
 
       if (nextStudyMode) {
         hideSpeechBubble();
@@ -310,13 +373,13 @@ export default function App() {
         lastRunningDirection.current = 'left';
       }
 
-      setPetState(
+      updatePetState(
         lastRunningDirection.current === 'right' ? 'runningRight' : 'runningLeft'
       );
     }
 
     previousPointerPosition.current = nextPosition;
-    window.jiyiPet.moveDrag(nextPosition);
+    window.desktopPet.moveDrag(nextPosition);
   }
 
   function handlePointerUp(event: PointerEvent<HTMLButtonElement>) {
@@ -340,7 +403,7 @@ export default function App() {
     pointerStart.current = null;
     previousPointerPosition.current = null;
     didMovePastClickLimit.current = false;
-    window.jiyiPet.endDrag();
+    window.desktopPet.endDrag();
 
     if (isClick) {
       handlePetClick();
@@ -355,21 +418,64 @@ export default function App() {
     previousPointerPosition.current = null;
     didMovePastClickLimit.current = false;
     returnToRestState();
-    window.jiyiPet.endDrag();
+    window.desktopPet.endDrag();
   }
 
-  function handleContextMenu(event: MouseEvent<HTMLButtonElement>) {
+  function updatePointerOverPet(nextIsPointerOverPet: boolean) {
+    if (isPointerOverPet.current === nextIsPointerOverPet) {
+      return;
+    }
+
+    isPointerOverPet.current = nextIsPointerOverPet;
+
+    if (nextIsPointerOverPet) {
+      if (
+        !isStudyModeRef.current &&
+        !isDragging.current &&
+        petStateRef.current === 'idle'
+      ) {
+        updatePetState('shy');
+      }
+
+      return;
+    }
+
+    if (petStateRef.current === 'shy') {
+      updatePetState('idle');
+    }
+  }
+
+  function handleContextMenu(event: ReactMouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     clearPendingSingleClick();
-    window.jiyiPet.showContextMenu({ isStudyMode: isStudyModeRef.current });
+    window.desktopPet.showContextMenu({ isStudyMode: isStudyModeRef.current });
   }
+
+  const currentAnimation = currentPet.states[petState];
+  const petButtonStyle = {
+    '--pet-scale': String(currentPet.scale),
+    '--pet-frame-width': `${currentPet.frameWidth}px`,
+    '--pet-frame-height': `${currentPet.frameHeight}px`
+  } as CSSProperties;
+  const petSpriteStyle = {
+    backgroundImage: `url(${currentPet.spritesheet})`,
+    '--pet-sheet-width': `${currentPet.sheetWidth}px`,
+    '--pet-sheet-height': `${currentPet.sheetHeight}px`,
+    '--pet-animation-name': getAnimationName(currentPet.id, petState),
+    '--pet-animation-duration': `${currentAnimation.durationMs}ms`,
+    '--pet-animation-iteration': currentAnimation.loop ? 'infinite' : '1',
+    '--pet-animation-fill-mode': currentAnimation.fillMode ?? 'none'
+  } as CSSProperties;
 
   return (
     <main className="pet-stage">
+      <style>{petAnimationCss}</style>
       {speechLine ? <div className="speech-bubble">{speechLine}</div> : null}
       <button
+        ref={petButtonRef}
         className="pet-button"
-        aria-label="Jiyi desktop pet"
+        aria-label={`${currentPet.displayName} desktop pet`}
+        style={petButtonStyle}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -377,9 +483,9 @@ export default function App() {
         onContextMenu={handleContextMenu}
       >
         <span
-          key={`${petState}-${wavingRunId}`}
-          className={`pet-sprite pet-sprite--${PET_STATE_CLASS[petState]}`}
-          style={SPRITESHEET_STYLE}
+          key={`${currentPet.id}-${petState}-${wavingRunId}`}
+          className={`pet-sprite pet-sprite--${petState}`}
+          style={petSpriteStyle}
         />
       </button>
     </main>

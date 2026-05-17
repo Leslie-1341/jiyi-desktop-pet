@@ -66,9 +66,11 @@ button {
 
 .pet-button {
   --pet-scale: 0.6;
+  --pet-frame-width: 192px;
+  --pet-frame-height: 208px;
 
-  width: 192px;
-  height: 208px;
+  width: var(--pet-frame-width);
+  height: var(--pet-frame-height);
   display: block;
   padding: 0;
   border: 0;
@@ -84,224 +86,16 @@ button {
 
 .pet-sprite {
   display: block;
-  width: 192px;
-  height: 208px;
+  width: var(--pet-frame-width);
+  height: var(--pet-frame-height);
   background-repeat: no-repeat;
   background-position: 0 0;
-  background-size: 1536px 1872px;
+  background-size: var(--pet-sheet-width) var(--pet-sheet-height);
+  animation:
+    var(--pet-animation-name)
+    var(--pet-animation-duration)
+    step-end
+    var(--pet-animation-iteration)
+    var(--pet-animation-fill-mode);
   pointer-events: none;
-}
-
-.pet-sprite--idle {
-  animation: jiyi-idle 2.6s step-end infinite;
-}
-
-.pet-sprite--waving {
-  animation: jiyi-waving 1.2s step-end 1 forwards;
-}
-
-.pet-sprite--running-right {
-  animation: jiyi-running-right 1.2s step-end infinite;
-}
-
-.pet-sprite--running-left {
-  animation: jiyi-running-left 1.2s step-end infinite;
-}
-
-.pet-sprite--study {
-  animation: jiyi-study 2s step-end infinite;
-}
-
-@keyframes jiyi-idle {
-  0%,
-  9.99% {
-    background-position: 0 0;
-  }
-
-  10%,
-  19.99% {
-    background-position: -192px 0;
-  }
-
-  20%,
-  29.99% {
-    background-position: -384px 0;
-  }
-
-  30%,
-  39.99% {
-    background-position: -576px 0;
-  }
-
-  40%,
-  49.99% {
-    background-position: -768px 0;
-  }
-
-  50%,
-  59.99% {
-    background-position: -960px 0;
-  }
-
-  60%,
-  69.99% {
-    background-position: -768px 0;
-  }
-
-  70%,
-  79.99% {
-    background-position: -576px 0;
-  }
-
-  80%,
-  99.99% {
-    background-position: -192px 0;
-  }
-
-  100% {
-    background-position: 0 0;
-  }
-}
-
-@keyframes jiyi-waving {
-  0%,
-  19.99% {
-    background-position: 0 -624px;
-  }
-
-  20%,
-  39.99% {
-    background-position: -192px -624px;
-  }
-
-  40%,
-  59.99% {
-    background-position: 0 -624px;
-  }
-
-  60%,
-  79.99% {
-    background-position: -192px -624px;
-  }
-
-  80%,
-  100% {
-    background-position: -576px -624px;
-  }
-}
-
-@keyframes jiyi-running-right {
-  0%,
-  12.49% {
-    background-position: 0 -208px;
-  }
-
-  12.5%,
-  24.99% {
-    background-position: -192px -208px;
-  }
-
-  25%,
-  37.49% {
-    background-position: -384px -208px;
-  }
-
-  37.5%,
-  49.99% {
-    background-position: -576px -208px;
-  }
-
-  50%,
-  62.49% {
-    background-position: -768px -208px;
-  }
-
-  62.5%,
-  74.99% {
-    background-position: -960px -208px;
-  }
-
-  75%,
-  87.49% {
-    background-position: -1152px -208px;
-  }
-
-  87.5%,
-  100% {
-    background-position: -1344px -208px;
-  }
-}
-
-@keyframes jiyi-running-left {
-  0%,
-  12.49% {
-    background-position: 0 -416px;
-  }
-
-  12.5%,
-  24.99% {
-    background-position: -192px -416px;
-  }
-
-  25%,
-  37.49% {
-    background-position: -384px -416px;
-  }
-
-  37.5%,
-  49.99% {
-    background-position: -576px -416px;
-  }
-
-  50%,
-  62.49% {
-    background-position: -768px -416px;
-  }
-
-  62.5%,
-  74.99% {
-    background-position: -960px -416px;
-  }
-
-  75%,
-  87.49% {
-    background-position: -1152px -416px;
-  }
-
-  87.5%,
-  100% {
-    background-position: -1344px -416px;
-  }
-}
-
-@keyframes jiyi-study {
-  0%,
-  16.65% {
-    background-position: 0 -1664px;
-  }
-
-  16.66%,
-  33.32% {
-    background-position: -192px -1664px;
-  }
-
-  33.33%,
-  49.99% {
-    background-position: -384px -1664px;
-  }
-
-  50%,
-  66.65% {
-    background-position: -576px -1664px;
-  }
-
-  66.66%,
-  83.32% {
-    background-position: -768px -1664px;
-  }
-
-  83.33%,
-  100% {
-    background-position: -960px -1664px;
-  }
 }

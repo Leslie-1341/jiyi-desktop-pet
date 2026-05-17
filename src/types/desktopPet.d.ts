@@ -4,7 +4,7 @@ type PetMenuCommand = 'toggle-study' | 'back-to-idle';
 
 declare global {
   interface Window {
-    jiyiPet: {
+    desktopPet: {
       startDrag: (position: { x: number; y: number }) => void;
       moveDrag: (position: { x: number; y: number }) => void;
       endDrag: () => void;

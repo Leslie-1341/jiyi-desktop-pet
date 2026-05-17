@@ -144,7 +144,7 @@ function buildControlMenu() {
 
   return Menu.buildFromTemplate([
     {
-      label: isVisible ? '隐藏吉伊' : '显示吉伊',
+      label: isVisible ? '隐藏桌宠' : '显示桌宠',
       click: () => {
         if (petWindow?.isVisible()) {
           hidePetWindow();
@@ -311,7 +311,7 @@ ipcMain.on('pet-show-context-menu', (event, menuState: PetContextMenuState) => {
     },
     { type: 'separator' },
     {
-      label: '隐藏吉伊',
+      label: '隐藏桌宠',
       click: () => {
         hidePetWindow();
       }
