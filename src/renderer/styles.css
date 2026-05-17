@@ -22,6 +22,7 @@ button {
 }
 
 .pet-stage {
+  position: relative;
   width: 100vw;
   height: 100vh;
   display: flex;
@@ -62,6 +63,107 @@ button {
   border-bottom: 1px solid rgba(36, 36, 36, 0.12);
   background: rgba(255, 255, 255, 0.94);
   transform: translateX(-50%) rotate(45deg);
+}
+
+.timer-badge {
+  position: absolute;
+  left: 50%;
+  bottom: 176px;
+  z-index: 1;
+  padding: 4px 8px;
+  border: 1px solid rgba(36, 36, 36, 0.1);
+  border-radius: 9px;
+  color: #2f2b28;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 6px 18px rgba(34, 38, 46, 0.2);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.timer-modal {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 18px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.timer-modal__panel {
+  width: 184px;
+  padding: 10px;
+  border: 1px solid rgba(36, 36, 36, 0.12);
+  border-radius: 12px;
+  color: #2f2b28;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 10px 24px rgba(34, 38, 46, 0.2);
+  box-sizing: border-box;
+}
+
+.timer-modal__title {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.1;
+  text-align: center;
+}
+
+.timer-modal__tabs,
+.timer-modal__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.timer-modal__tab,
+.timer-modal__actions button {
+  height: 28px;
+  border: 1px solid rgba(36, 36, 36, 0.14);
+  border-radius: 8px;
+  color: #2f2b28;
+  background: rgba(247, 247, 247, 0.9);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.timer-modal__tab--active {
+  color: #ffffff;
+  background: #2f2b28;
+}
+
+.timer-modal__field {
+  display: grid;
+  gap: 5px;
+  margin: 8px 0;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.timer-modal__field input {
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid rgba(36, 36, 36, 0.16);
+  border-radius: 8px;
+  color: #2f2b28;
+  background: #ffffff;
+  box-sizing: border-box;
+  font: inherit;
+}
+
+.timer-modal__error {
+  margin: -2px 0 7px;
+  color: #a43c2f;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
 }
 
 .pet-button {

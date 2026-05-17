@@ -1,6 +1,17 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
-type PetMenuCommand = 'toggle-study' | 'back-to-idle';
+type PetMenuCommand =
+  | 'toggle-study'
+  | 'back-to-idle'
+  | 'start-focus-25-timer'
+  | 'start-focus-45-timer'
+  | 'start-break-5-timer'
+  | 'start-break-10-timer'
+  | 'open-custom-focus-timer'
+  | 'toggle-focus-timer-pause'
+  | 'end-focus-timer';
+type FocusTimerState = import('../shared/focusTimer').FocusTimerState;
+type FocusTimerNotificationKind = import('../shared/focusTimer').FocusTimerNotificationKind;
 
 contextBridge.exposeInMainWorld('desktopPet', {
   startDrag: (position: { x: number; y: number }) => {
@@ -37,6 +48,15 @@ contextBridge.exposeInMainWorld('desktopPet', {
     return () => {
       ipcRenderer.removeListener('pet-active-pet-changed', listener);
     };
+  },
+  getFocusTimerState: () => {
+    return ipcRenderer.invoke('pet-get-focus-timer-state') as Promise<FocusTimerState>;
+  },
+  setFocusTimerState: (timerState: FocusTimerState) => {
+    ipcRenderer.send('pet-set-focus-timer-state', timerState);
+  },
+  showFocusTimerNotification: (kind: FocusTimerNotificationKind) => {
+    ipcRenderer.send('pet-show-focus-timer-notification', kind);
   },
   onWindowVisibility: (callback: (isVisible: boolean) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, isVisible: boolean) => {

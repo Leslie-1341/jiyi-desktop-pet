@@ -1,5 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent } from 'react';
+import type {
+  CSSProperties,
+  FormEvent,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent
+} from 'react';
+import {
+  createIdleFocusTimerState,
+  FOCUS_TIMER_DURATIONS_MS,
+  getFocusTimerActiveMode,
+  type FocusTimerBaseMode,
+  type FocusTimerState
+} from '../shared/focusTimer';
 import { defaultPetId, getPetConfig, petConfigs, type PetConfig, type PetState } from './pets';
 
 const CLICK_MOVE_LIMIT = 6;
@@ -8,7 +20,23 @@ const LONG_PRESS_DURATION_MS = 600;
 const SPEECH_BUBBLE_DURATION_MS = 2200;
 const AUTO_SPEECH_MIN_DELAY_MS = 45_000;
 const AUTO_SPEECH_MAX_DELAY_MS = 90_000;
+const FOCUS_COMPLETE_LINE = '专注完成啦，休息一下吧！';
+const BREAK_COMPLETE_LINE = '休息结束，要继续吗？';
+const CUSTOM_TIMER_MIN_MINUTES = 1;
+const CUSTOM_TIMER_MAX_MINUTES = 180;
+const FOCUS_TIMER_PRESET_DURATIONS_MS = {
+  focus25: FOCUS_TIMER_DURATIONS_MS.focus,
+  focus45: 45 * 60 * 1000,
+  break5: FOCUS_TIMER_DURATIONS_MS.break,
+  break10: 10 * 60 * 1000
+};
 type RunningDirection = 'right' | 'left';
+type CustomTimerForm = {
+  isOpen: boolean;
+  mode: FocusTimerBaseMode;
+  minutes: string;
+  error: string | null;
+};
 
 function getAnimationName(petId: string, state: PetState) {
   return `pet-${petId}-${state}`;
@@ -16,6 +44,14 @@ function getAnimationName(petId: string, state: PetState) {
 
 function formatPercent(value: number) {
   return Number(value.toFixed(2));
+}
+
+function formatTimerTime(remainingMs: number) {
+  const totalSeconds = Math.ceil(remainingMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
 function getValidPetId(petId: string) {
@@ -52,6 +88,16 @@ export default function App() {
   const [speechLine, setSpeechLine] = useState<string | null>(null);
   const [wavingRunId, setWavingRunId] = useState(0);
   const [jumpingRunId, setJumpingRunId] = useState(0);
+  const [focusTimerState, setFocusTimerState] = useState<FocusTimerState>(() =>
+    createIdleFocusTimerState()
+  );
+  const [customTimerForm, setCustomTimerForm] = useState<CustomTimerForm>({
+    isOpen: false,
+    mode: 'focus',
+    minutes: '25',
+    error: null
+  });
+  const [timerNow, setTimerNow] = useState(Date.now());
   const petButtonRef = useRef<HTMLButtonElement | null>(null);
   const pointerStart = useRef<{ x: number; y: number } | null>(null);
   const previousPointerPosition = useRef<{ x: number; y: number } | null>(null);
@@ -68,6 +114,7 @@ export default function App() {
   const isWindowVisibleRef = useRef(true);
   const petStateRef = useRef<PetState>('idle');
   const speechLineRef = useRef<string | null>(null);
+  const focusTimerStateRef = useRef<FocusTimerState>(focusTimerState);
   const currentPet = getPetConfig(activePetId);
   const petAnimationCss = useMemo(() => buildPetAnimationCss(currentPet), [currentPet]);
 
@@ -87,6 +134,10 @@ export default function App() {
   useEffect(() => {
     speechLineRef.current = speechLine;
   }, [speechLine]);
+
+  useEffect(() => {
+    focusTimerStateRef.current = focusTimerState;
+  }, [focusTimerState]);
 
   useEffect(() => {
     if (petState !== 'waving' && petState !== 'jumping') {
@@ -142,7 +193,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (isStudyMode || !isWindowVisible || petState !== 'idle' || speechLine !== null) {
+    if (
+      isStudyMode ||
+      isFocusTimerBlockingAutoSpeech() ||
+      !isWindowVisible ||
+      petState !== 'idle' ||
+      speechLine !== null
+    ) {
       clearAutoSpeechTimer();
       return;
     }
@@ -162,12 +219,86 @@ export default function App() {
         return;
       }
 
+      if (command === 'start-focus-25-timer') {
+        startFocusTimer('focus', FOCUS_TIMER_PRESET_DURATIONS_MS.focus25);
+        return;
+      }
+
+      if (command === 'start-focus-45-timer') {
+        startFocusTimer('focus', FOCUS_TIMER_PRESET_DURATIONS_MS.focus45);
+        return;
+      }
+
+      if (command === 'start-break-5-timer') {
+        startFocusTimer('break', FOCUS_TIMER_PRESET_DURATIONS_MS.break5);
+        return;
+      }
+
+      if (command === 'start-break-10-timer') {
+        startFocusTimer('break', FOCUS_TIMER_PRESET_DURATIONS_MS.break10);
+        return;
+      }
+
+      if (command === 'open-custom-focus-timer') {
+        openCustomTimerForm();
+        return;
+      }
+
+      if (command === 'toggle-focus-timer-pause') {
+        toggleFocusTimerPause();
+        return;
+      }
+
+      if (command === 'end-focus-timer') {
+        endFocusTimer();
+        return;
+      }
+
       clearPendingSingleClick();
       isStudyModeRef.current = false;
       setIsStudyMode(false);
       updatePetState('idle');
     });
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    window.desktopPet.getFocusTimerState().then((savedTimerState) => {
+      if (isMounted) {
+        restoreFocusTimerState(savedTimerState);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (focusTimerState.mode !== 'focus' && focusTimerState.mode !== 'break') {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      const now = Date.now();
+      setTimerNow(now);
+
+      const activeTimerState = focusTimerStateRef.current;
+      const activeMode = getFocusTimerActiveMode(activeTimerState);
+
+      if (
+        (activeMode === 'focus' || activeMode === 'break') &&
+        getFocusTimerRemainingMs(activeTimerState, now) <= 0
+      ) {
+        completeFocusTimer(activeMode);
+      }
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [focusTimerState.mode, focusTimerState.endAt]);
 
   useEffect(() => {
     let isMounted = true;
@@ -235,6 +366,224 @@ export default function App() {
   function updatePetState(nextPetState: PetState) {
     petStateRef.current = nextPetState;
     setPetState(nextPetState);
+  }
+
+  function updateFocusTimerState(nextFocusTimerState: FocusTimerState, shouldPersist = true) {
+    focusTimerStateRef.current = nextFocusTimerState;
+    setFocusTimerState(nextFocusTimerState);
+
+    if (shouldPersist) {
+      window.desktopPet.setFocusTimerState(nextFocusTimerState);
+    }
+  }
+
+  function getFocusTimerRemainingMs(timerState: FocusTimerState, now = Date.now()) {
+    if (
+      (timerState.mode === 'focus' || timerState.mode === 'break') &&
+      timerState.endAt !== null
+    ) {
+      return Math.max(0, timerState.endAt - now);
+    }
+
+    return Math.max(0, timerState.remainingMs);
+  }
+
+  function isFocusTimerStudyLocked() {
+    const activeMode = getFocusTimerActiveMode(focusTimerStateRef.current);
+    return activeMode === 'focus';
+  }
+
+  function isFocusTimerBlockingAutoSpeech() {
+    return focusTimerStateRef.current.mode === 'focus' || isFocusTimerStudyLocked();
+  }
+
+  function createRunningFocusTimerState(mode: FocusTimerBaseMode, durationMs: number) {
+    const now = Date.now();
+
+    return {
+      mode,
+      previousMode: null,
+      remainingMs: durationMs,
+      endAt: now + durationMs,
+      lastUpdatedAt: now
+    } satisfies FocusTimerState;
+  }
+
+  function hasActiveFocusTimer() {
+    return focusTimerStateRef.current.mode !== 'idle';
+  }
+
+  function openCustomTimerForm() {
+    if (hasActiveFocusTimer()) {
+      return;
+    }
+
+    setCustomTimerForm({
+      isOpen: true,
+      mode: 'focus',
+      minutes: '25',
+      error: null
+    });
+  }
+
+  function closeCustomTimerForm() {
+    setCustomTimerForm((currentForm) => ({
+      ...currentForm,
+      isOpen: false,
+      error: null
+    }));
+  }
+
+  function getCustomTimerMinutes() {
+    const trimmedMinutes = customTimerForm.minutes.trim();
+
+    if (!/^\d+$/.test(trimmedMinutes)) {
+      return null;
+    }
+
+    const minutes = Number(trimmedMinutes);
+
+    if (
+      !Number.isInteger(minutes) ||
+      minutes < CUSTOM_TIMER_MIN_MINUTES ||
+      minutes > CUSTOM_TIMER_MAX_MINUTES
+    ) {
+      return null;
+    }
+
+    return minutes;
+  }
+
+  function startCustomTimer() {
+    const minutes = getCustomTimerMinutes();
+
+    if (minutes === null) {
+      setCustomTimerForm((currentForm) => ({
+        ...currentForm,
+        error: '请输入 1 到 180 之间的整数分钟'
+      }));
+      return;
+    }
+
+    const mode = customTimerForm.mode;
+    closeCustomTimerForm();
+    startFocusTimer(mode, minutes * 60 * 1000);
+  }
+
+  function handleCustomTimerSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    startCustomTimer();
+  }
+
+  function startFocusTimer(mode: FocusTimerBaseMode, durationMs: number) {
+    if (hasActiveFocusTimer()) {
+      return;
+    }
+
+    const nextTimerState = createRunningFocusTimerState(mode, durationMs);
+    updateFocusTimerState(nextTimerState);
+    clearPendingSingleClick();
+    clearLongPressTimer();
+    hideSpeechBubble();
+    closeCustomTimerForm();
+    setTimerNow(Date.now());
+
+    if (mode === 'focus') {
+      isStudyModeRef.current = true;
+      setIsStudyMode(true);
+      updatePetState('study');
+      return;
+    }
+
+    isStudyModeRef.current = false;
+    setIsStudyMode(false);
+    updatePetState(getRestState(false));
+  }
+
+  function toggleFocusTimerPause() {
+    const currentTimerState = focusTimerStateRef.current;
+
+    if (currentTimerState.mode === 'idle') {
+      return;
+    }
+
+    const now = Date.now();
+
+    if (currentTimerState.mode === 'paused') {
+      const resumeMode = currentTimerState.previousMode;
+
+      if (!resumeMode) {
+        return;
+      }
+
+      updateFocusTimerState({
+        mode: resumeMode,
+        previousMode: null,
+        remainingMs: currentTimerState.remainingMs,
+        endAt: now + currentTimerState.remainingMs,
+        lastUpdatedAt: now
+      });
+      setTimerNow(now);
+      return;
+    }
+
+    updateFocusTimerState({
+      mode: 'paused',
+      previousMode: currentTimerState.mode,
+      remainingMs: getFocusTimerRemainingMs(currentTimerState, now),
+      endAt: null,
+      lastUpdatedAt: now
+    });
+    setTimerNow(now);
+  }
+
+  function endFocusTimer() {
+    updateFocusTimerState(createIdleFocusTimerState());
+    closeCustomTimerForm();
+    clearPendingSingleClick();
+    clearLongPressTimer();
+    isStudyModeRef.current = false;
+    setIsStudyMode(false);
+    updatePetState(getRestState(false));
+  }
+
+  function completeFocusTimer(mode: FocusTimerBaseMode) {
+    updateFocusTimerState(createIdleFocusTimerState());
+    isStudyModeRef.current = false;
+    setIsStudyMode(false);
+    updatePetState(getRestState(false));
+    showSpeechBubble({
+      line: mode === 'focus' ? FOCUS_COMPLETE_LINE : BREAK_COMPLETE_LINE,
+      resetAutoTimer: true
+    });
+    window.desktopPet.showFocusTimerNotification(mode);
+  }
+
+  function restoreFocusTimerState(savedTimerState: FocusTimerState) {
+    const now = Date.now();
+    const activeMode = getFocusTimerActiveMode(savedTimerState);
+
+    if (
+      (activeMode === 'focus' || activeMode === 'break') &&
+      savedTimerState.mode !== 'paused' &&
+      getFocusTimerRemainingMs(savedTimerState, now) <= 0
+    ) {
+      completeFocusTimer(activeMode);
+      return;
+    }
+
+    updateFocusTimerState(savedTimerState, false);
+    setTimerNow(now);
+
+    if (activeMode === 'focus') {
+      isStudyModeRef.current = true;
+      setIsStudyMode(true);
+      updatePetState('study');
+    } else if (activeMode === 'break') {
+      isStudyModeRef.current = false;
+      setIsStudyMode(false);
+      updatePetState(getRestState(false));
+    }
   }
 
   function clearLongPressTimer() {
@@ -356,7 +705,10 @@ export default function App() {
     setSpeechLine(null);
   }
 
-  function showSpeechBubble({ resetAutoTimer = true } = {}) {
+  function showSpeechBubble({ line, resetAutoTimer = true }: {
+    line?: string;
+    resetAutoTimer?: boolean;
+  } = {}) {
     if (resetAutoTimer) {
       clearAutoSpeechTimer();
     }
@@ -365,7 +717,7 @@ export default function App() {
       window.clearTimeout(speechTimeoutId.current);
     }
 
-    setSpeechLine(pickSpeechLine());
+    setSpeechLine(line ?? pickSpeechLine());
     speechTimeoutId.current = window.setTimeout(() => {
       setSpeechLine(null);
       speechTimeoutId.current = null;
@@ -390,7 +742,7 @@ export default function App() {
   }
 
   function handleConfirmedSingleClick() {
-    if (isStudyModeRef.current) {
+    if (isStudyModeRef.current || isFocusTimerStudyLocked()) {
       return;
     }
 
@@ -402,6 +754,10 @@ export default function App() {
   }
 
   function toggleStudyMode() {
+    if (isFocusTimerStudyLocked()) {
+      return;
+    }
+
     setIsStudyMode((currentStudyMode) => {
       const nextStudyMode = !currentStudyMode;
       isStudyModeRef.current = nextStudyMode;
@@ -551,10 +907,86 @@ export default function App() {
     '--pet-animation-iteration': currentAnimation.loop ? 'infinite' : '1',
     '--pet-animation-fill-mode': currentAnimation.fillMode ?? 'none'
   } as CSSProperties;
+  const timerRemainingMs = getFocusTimerRemainingMs(focusTimerState, timerNow);
+  const shouldShowTimer = focusTimerState.mode !== 'idle';
+  const timerLabel = `${formatTimerTime(timerRemainingMs)}${
+    focusTimerState.mode === 'paused' ? ' 已暂停' : ''
+  }`;
 
   return (
     <main className="pet-stage">
       <style>{petAnimationCss}</style>
+      {customTimerForm.isOpen ? (
+        <div className="timer-modal" role="dialog" aria-label="自定义计时">
+          <form className="timer-modal__panel" onSubmit={handleCustomTimerSubmit}>
+            <div className="timer-modal__title">自定义计时</div>
+            <div className="timer-modal__tabs" aria-label="计时类型">
+              <button
+                className={`timer-modal__tab ${
+                  customTimerForm.mode === 'focus' ? 'timer-modal__tab--active' : ''
+                }`}
+                type="button"
+                onClick={() => {
+                  setCustomTimerForm((currentForm) => ({
+                    ...currentForm,
+                    mode: 'focus',
+                    error: null
+                  }));
+                }}
+              >
+                专注
+              </button>
+              <button
+                className={`timer-modal__tab ${
+                  customTimerForm.mode === 'break' ? 'timer-modal__tab--active' : ''
+                }`}
+                type="button"
+                onClick={() => {
+                  setCustomTimerForm((currentForm) => ({
+                    ...currentForm,
+                    mode: 'break',
+                    error: null
+                  }));
+                }}
+              >
+                休息
+              </button>
+            </div>
+            <label className="timer-modal__field">
+              <span>时长（分钟）</span>
+              <input
+                inputMode="numeric"
+                min={CUSTOM_TIMER_MIN_MINUTES}
+                max={CUSTOM_TIMER_MAX_MINUTES}
+                pattern="[0-9]*"
+                type="number"
+                value={customTimerForm.minutes}
+                onChange={(event) => {
+                  setCustomTimerForm((currentForm) => ({
+                    ...currentForm,
+                    minutes: event.target.value,
+                    error: null
+                  }));
+                }}
+              />
+            </label>
+            {customTimerForm.error ? (
+              <div className="timer-modal__error">{customTimerForm.error}</div>
+            ) : null}
+            <div className="timer-modal__actions">
+              <button type="submit">开始</button>
+              <button type="button" onClick={closeCustomTimerForm}>
+                取消
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+      {shouldShowTimer ? (
+        <div className="timer-badge">
+          {timerLabel}
+        </div>
+      ) : null}
       {speechLine ? <div className="speech-bubble">{speechLine}</div> : null}
       <button
         ref={petButtonRef}

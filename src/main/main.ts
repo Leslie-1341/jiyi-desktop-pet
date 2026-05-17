@@ -1,6 +1,11 @@
-import { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, screen } from 'electron';
+import { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, screen, Notification } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+  createIdleFocusTimerState,
+  type FocusTimerNotificationKind,
+  type FocusTimerState
+} from '../shared/focusTimer';
 import { defaultPetId, isKnownPetId, petRegistry } from '../shared/petRegistry';
 
 type DragState = {
@@ -19,6 +24,17 @@ type WindowState = {
   y: number;
 };
 
+type PetMenuCommand =
+  | 'toggle-study'
+  | 'back-to-idle'
+  | 'start-focus-25-timer'
+  | 'start-focus-45-timer'
+  | 'start-break-5-timer'
+  | 'start-break-10-timer'
+  | 'open-custom-focus-timer'
+  | 'toggle-focus-timer-pause'
+  | 'end-focus-timer';
+
 type PetPreferences = {
   activePetId: string;
 };
@@ -33,6 +49,7 @@ let dragState: DragState | null = null;
 let tray: Tray | null = null;
 let isStudyMode = false;
 let activePetId = defaultPetId;
+let focusTimerState = createIdleFocusTimerState();
 
 const isDev = !app.isPackaged;
 
@@ -42,6 +59,58 @@ function getWindowStatePath() {
 
 function getPetPreferencesPath() {
   return path.join(app.getPath('userData'), 'pet-preferences.json');
+}
+
+function getFocusTimerStatePath() {
+  return path.join(app.getPath('userData'), 'focus-timer.json');
+}
+
+function isFocusTimerState(value: unknown): value is FocusTimerState {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const timer = value as Partial<FocusTimerState>;
+  const validMode =
+    timer.mode === 'idle' ||
+    timer.mode === 'focus' ||
+    timer.mode === 'break' ||
+    timer.mode === 'paused';
+  const validPreviousMode =
+    timer.previousMode === null ||
+    timer.previousMode === 'focus' ||
+    timer.previousMode === 'break';
+
+  return (
+    validMode &&
+    validPreviousMode &&
+    typeof timer.remainingMs === 'number' &&
+    (typeof timer.endAt === 'number' || timer.endAt === null) &&
+    typeof timer.lastUpdatedAt === 'number'
+  );
+}
+
+function readFocusTimerState() {
+  try {
+    const rawState = fs.readFileSync(getFocusTimerStatePath(), 'utf8');
+    const parsedState = JSON.parse(rawState);
+
+    if (isFocusTimerState(parsedState)) {
+      return parsedState;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function saveFocusTimerState() {
+  try {
+    fs.writeFileSync(getFocusTimerStatePath(), `${JSON.stringify(focusTimerState, null, 2)}\n`);
+  } catch (error) {
+    console.error('Failed to save focus timer state:', error);
+  }
 }
 
 function readPetPreferences() {
@@ -144,7 +213,7 @@ function resolveTrayIconPath() {
   return path.join(process.resourcesPath, 'petTrayTemplate.png');
 }
 
-function sendPetMenuCommand(command: 'toggle-study' | 'back-to-idle') {
+function sendPetMenuCommand(command: PetMenuCommand) {
   petWindow?.webContents.send('pet-menu-command', command);
 }
 
@@ -164,6 +233,21 @@ function setActivePetId(nextPetId: string) {
   activePetId = nextPetId;
   savePetPreferences();
   sendActivePetChanged();
+}
+
+function setFocusTimerState(nextFocusTimerState: FocusTimerState) {
+  focusTimerState = nextFocusTimerState;
+  saveFocusTimerState();
+}
+
+function showFocusTimerNotification(kind: FocusTimerNotificationKind) {
+  try {
+    const title = kind === 'focus' ? '专注完成' : '休息结束';
+    const body = kind === 'focus' ? '专注完成啦，休息一下吧！' : '休息结束，要继续吗？';
+    new Notification({ title, body }).show();
+  } catch (error) {
+    console.error('Failed to show focus timer notification:', error);
+  }
 }
 
 function showPetWindow() {
@@ -195,6 +279,8 @@ function toggleOpenAtLogin() {
 function buildControlMenu() {
   const isVisible = Boolean(petWindow?.isVisible());
   const openAtLogin = getOpenAtLogin();
+  const hasActiveTimer = focusTimerState.mode !== 'idle';
+  const pauseTimerLabel = focusTimerState.mode === 'paused' ? '继续当前计时' : '暂停当前计时';
 
   return Menu.buildFromTemplate([
     {
@@ -231,6 +317,61 @@ function buildControlMenu() {
           showTrayMenu();
         }
       }))
+    },
+    {
+      label: '专注计时',
+      submenu: [
+        {
+          label: '开始 25 分钟专注',
+          enabled: !hasActiveTimer,
+          click: () => {
+            sendPetMenuCommand('start-focus-25-timer');
+          }
+        },
+        {
+          label: '开始 45 分钟专注',
+          enabled: !hasActiveTimer,
+          click: () => {
+            sendPetMenuCommand('start-focus-45-timer');
+          }
+        },
+        {
+          label: '开始 5 分钟休息',
+          enabled: !hasActiveTimer,
+          click: () => {
+            sendPetMenuCommand('start-break-5-timer');
+          }
+        },
+        {
+          label: '开始 10 分钟休息',
+          enabled: !hasActiveTimer,
+          click: () => {
+            sendPetMenuCommand('start-break-10-timer');
+          }
+        },
+        {
+          label: '自定义计时...',
+          enabled: !hasActiveTimer,
+          click: () => {
+            sendPetMenuCommand('open-custom-focus-timer');
+          }
+        },
+        { type: 'separator' },
+        {
+          label: pauseTimerLabel,
+          enabled: hasActiveTimer,
+          click: () => {
+            sendPetMenuCommand('toggle-focus-timer-pause');
+          }
+        },
+        {
+          label: '结束当前计时',
+          enabled: hasActiveTimer,
+          click: () => {
+            sendPetMenuCommand('end-focus-timer');
+          }
+        }
+      ]
     },
     { type: 'separator' },
     {
@@ -310,6 +451,7 @@ function createPetWindow() {
 
 app.whenReady().then(() => {
   activePetId = readPetPreferences()?.activePetId ?? defaultPetId;
+  focusTimerState = readFocusTimerState() ?? createIdleFocusTimerState();
   createPetWindow();
   createTray();
 
@@ -363,6 +505,20 @@ ipcMain.handle('pet-get-active-pet-id', () => activePetId);
 
 ipcMain.on('pet-set-active-pet-id', (_event, nextPetId: string) => {
   setActivePetId(nextPetId);
+});
+
+ipcMain.handle('pet-get-focus-timer-state', () => focusTimerState);
+
+ipcMain.on('pet-set-focus-timer-state', (_event, nextFocusTimerState: FocusTimerState) => {
+  if (!isFocusTimerState(nextFocusTimerState)) {
+    return;
+  }
+
+  setFocusTimerState(nextFocusTimerState);
+});
+
+ipcMain.on('pet-show-focus-timer-notification', (_event, kind: FocusTimerNotificationKind) => {
+  showFocusTimerNotification(kind);
 });
 
 ipcMain.on('pet-show-context-menu', (event, menuState: PetContextMenuState) => {
