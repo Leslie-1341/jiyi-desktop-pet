@@ -4,6 +4,7 @@ export type FocusTimerMode = 'idle' | FocusTimerBaseMode | 'paused';
 export type FocusTimerState = {
   mode: FocusTimerMode;
   previousMode: FocusTimerBaseMode | null;
+  durationMs: number;
   remainingMs: number;
   endAt: number | null;
   lastUpdatedAt: number;
@@ -20,6 +21,7 @@ export function createIdleFocusTimerState(lastUpdatedAt = Date.now()): FocusTime
   return {
     mode: 'idle',
     previousMode: null,
+    durationMs: 0,
     remainingMs: 0,
     endAt: null,
     lastUpdatedAt

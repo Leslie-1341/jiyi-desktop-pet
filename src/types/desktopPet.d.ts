@@ -1,6 +1,10 @@
 export {};
 
-import type { FocusTimerNotificationKind, FocusTimerState } from '../shared/focusTimer';
+import type {
+  FocusTimerBaseMode,
+  FocusTimerNotificationKind,
+  FocusTimerState
+} from '../shared/focusTimer';
 
 type PetMenuCommand =
   | 'toggle-study'
@@ -28,6 +32,7 @@ declare global {
       getFocusTimerState: () => Promise<FocusTimerState>;
       setFocusTimerState: (timerState: FocusTimerState) => void;
       showFocusTimerNotification: (kind: FocusTimerNotificationKind) => void;
+      recordCompletedTimer: (mode: FocusTimerBaseMode, durationMs: number) => void;
       onWindowVisibility: (callback: (isVisible: boolean) => void) => () => void;
       onMenuCommand: (callback: (command: PetMenuCommand) => void) => () => void;
     };

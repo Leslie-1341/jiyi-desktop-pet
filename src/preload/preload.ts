@@ -10,6 +10,7 @@ type PetMenuCommand =
   | 'open-custom-focus-timer'
   | 'toggle-focus-timer-pause'
   | 'end-focus-timer';
+type FocusTimerBaseMode = import('../shared/focusTimer').FocusTimerBaseMode;
 type FocusTimerState = import('../shared/focusTimer').FocusTimerState;
 type FocusTimerNotificationKind = import('../shared/focusTimer').FocusTimerNotificationKind;
 
@@ -57,6 +58,9 @@ contextBridge.exposeInMainWorld('desktopPet', {
   },
   showFocusTimerNotification: (kind: FocusTimerNotificationKind) => {
     ipcRenderer.send('pet-show-focus-timer-notification', kind);
+  },
+  recordCompletedTimer: (mode: FocusTimerBaseMode, durationMs: number) => {
+    ipcRenderer.send('pet-record-completed-timer', mode, durationMs);
   },
   onWindowVisibility: (callback: (isVisible: boolean) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, isVisible: boolean) => {

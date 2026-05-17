@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   createIdleFocusTimerState,
+  type FocusTimerBaseMode,
   type FocusTimerNotificationKind,
   type FocusTimerState
 } from '../shared/focusTimer';
@@ -39,6 +40,14 @@ type PetPreferences = {
   activePetId: string;
 };
 
+type FocusStats = {
+  todayDate: string;
+  todayCompletedFocusCount: number;
+  todayFocusMinutes: number;
+  todayCompletedBreakCount: number;
+  todayBreakMinutes: number;
+};
+
 const PET_WINDOW_SIZE = {
   width: 220,
   height: 300
@@ -50,6 +59,7 @@ let tray: Tray | null = null;
 let isStudyMode = false;
 let activePetId = defaultPetId;
 let focusTimerState = createIdleFocusTimerState();
+let focusStats: FocusStats | null = null;
 
 const isDev = !app.isPackaged;
 
@@ -63,6 +73,98 @@ function getPetPreferencesPath() {
 
 function getFocusTimerStatePath() {
   return path.join(app.getPath('userData'), 'focus-timer.json');
+}
+
+function getFocusStatsPath() {
+  return path.join(app.getPath('userData'), 'focus-stats.json');
+}
+
+function getLocalDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
+function createDefaultFocusStats(todayDate = getLocalDateKey()): FocusStats {
+  return {
+    todayDate,
+    todayCompletedFocusCount: 0,
+    todayFocusMinutes: 0,
+    todayCompletedBreakCount: 0,
+    todayBreakMinutes: 0
+  };
+}
+
+function isFocusStats(value: unknown): value is FocusStats {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const stats = value as Partial<FocusStats>;
+
+  return (
+    typeof stats.todayDate === 'string' &&
+    typeof stats.todayCompletedFocusCount === 'number' &&
+    typeof stats.todayFocusMinutes === 'number' &&
+    typeof stats.todayCompletedBreakCount === 'number' &&
+    typeof stats.todayBreakMinutes === 'number'
+  );
+}
+
+function normalizeFocusStatsForToday(stats: FocusStats) {
+  const todayDate = getLocalDateKey();
+
+  if (stats.todayDate === todayDate) {
+    return stats;
+  }
+
+  return createDefaultFocusStats(todayDate);
+}
+
+function readFocusStats() {
+  try {
+    const rawStats = fs.readFileSync(getFocusStatsPath(), 'utf8');
+    const parsedStats = JSON.parse(rawStats);
+
+    if (isFocusStats(parsedStats)) {
+      return normalizeFocusStatsForToday(parsedStats);
+    }
+  } catch {
+    return createDefaultFocusStats();
+  }
+
+  return createDefaultFocusStats();
+}
+
+function getFocusStats() {
+  focusStats = normalizeFocusStatsForToday(focusStats ?? readFocusStats());
+  return focusStats;
+}
+
+function saveFocusStats() {
+  try {
+    fs.writeFileSync(getFocusStatsPath(), `${JSON.stringify(getFocusStats(), null, 2)}\n`);
+  } catch (error) {
+    console.error('Failed to save focus stats:', error);
+  }
+}
+
+function recordCompletedTimer(mode: FocusTimerBaseMode, durationMs: number) {
+  const completedMinutes = Math.max(1, Math.round(durationMs / 60_000));
+  const nextStats = { ...getFocusStats() };
+
+  if (mode === 'focus') {
+    nextStats.todayCompletedFocusCount += 1;
+    nextStats.todayFocusMinutes += completedMinutes;
+  } else {
+    nextStats.todayCompletedBreakCount += 1;
+    nextStats.todayBreakMinutes += completedMinutes;
+  }
+
+  focusStats = nextStats;
+  saveFocusStats();
 }
 
 function isFocusTimerState(value: unknown): value is FocusTimerState {
@@ -84,6 +186,7 @@ function isFocusTimerState(value: unknown): value is FocusTimerState {
   return (
     validMode &&
     validPreviousMode &&
+    typeof timer.durationMs === 'number' &&
     typeof timer.remainingMs === 'number' &&
     (typeof timer.endAt === 'number' || timer.endAt === null) &&
     typeof timer.lastUpdatedAt === 'number'
@@ -281,6 +384,7 @@ function buildControlMenu() {
   const openAtLogin = getOpenAtLogin();
   const hasActiveTimer = focusTimerState.mode !== 'idle';
   const pauseTimerLabel = focusTimerState.mode === 'paused' ? '继续当前计时' : '暂停当前计时';
+  const todayFocusStats = getFocusStats();
 
   return Menu.buildFromTemplate([
     {
@@ -370,6 +474,15 @@ function buildControlMenu() {
           click: () => {
             sendPetMenuCommand('end-focus-timer');
           }
+        },
+        { type: 'separator' },
+        {
+          label: `今日专注：${todayFocusStats.todayCompletedFocusCount} 次 · ${todayFocusStats.todayFocusMinutes} 分钟`,
+          enabled: false
+        },
+        {
+          label: `今日休息：${todayFocusStats.todayCompletedBreakCount} 次 · ${todayFocusStats.todayBreakMinutes} 分钟`,
+          enabled: false
         }
       ]
     },
@@ -452,6 +565,7 @@ function createPetWindow() {
 app.whenReady().then(() => {
   activePetId = readPetPreferences()?.activePetId ?? defaultPetId;
   focusTimerState = readFocusTimerState() ?? createIdleFocusTimerState();
+  focusStats = readFocusStats();
   createPetWindow();
   createTray();
 
@@ -519,6 +633,14 @@ ipcMain.on('pet-set-focus-timer-state', (_event, nextFocusTimerState: FocusTimer
 
 ipcMain.on('pet-show-focus-timer-notification', (_event, kind: FocusTimerNotificationKind) => {
   showFocusTimerNotification(kind);
+});
+
+ipcMain.on('pet-record-completed-timer', (_event, mode: FocusTimerBaseMode, durationMs: number) => {
+  if ((mode !== 'focus' && mode !== 'break') || !Number.isFinite(durationMs) || durationMs <= 0) {
+    return;
+  }
+
+  recordCompletedTimer(mode, durationMs);
 });
 
 ipcMain.on('pet-show-context-menu', (event, menuState: PetContextMenuState) => {

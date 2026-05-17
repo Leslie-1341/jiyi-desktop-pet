@@ -403,6 +403,7 @@ export default function App() {
     return {
       mode,
       previousMode: null,
+      durationMs,
       remainingMs: durationMs,
       endAt: now + durationMs,
       lastUpdatedAt: now
@@ -519,6 +520,7 @@ export default function App() {
       updateFocusTimerState({
         mode: resumeMode,
         previousMode: null,
+        durationMs: currentTimerState.durationMs,
         remainingMs: currentTimerState.remainingMs,
         endAt: now + currentTimerState.remainingMs,
         lastUpdatedAt: now
@@ -530,6 +532,7 @@ export default function App() {
     updateFocusTimerState({
       mode: 'paused',
       previousMode: currentTimerState.mode,
+      durationMs: currentTimerState.durationMs,
       remainingMs: getFocusTimerRemainingMs(currentTimerState, now),
       endAt: null,
       lastUpdatedAt: now
@@ -548,6 +551,8 @@ export default function App() {
   }
 
   function completeFocusTimer(mode: FocusTimerBaseMode) {
+    const completedDurationMs = focusTimerStateRef.current.durationMs;
+
     updateFocusTimerState(createIdleFocusTimerState());
     isStudyModeRef.current = false;
     setIsStudyMode(false);
@@ -556,6 +561,7 @@ export default function App() {
       line: mode === 'focus' ? FOCUS_COMPLETE_LINE : BREAK_COMPLETE_LINE,
       resetAutoTimer: true
     });
+    window.desktopPet.recordCompletedTimer(mode, completedDurationMs);
     window.desktopPet.showFocusTimerNotification(mode);
   }
 
