@@ -6,6 +6,7 @@ import {
   type FocusTimerBaseMode,
   type FocusTimerNotificationKind,
   type FocusTimerPreferences,
+  type FocusStats,
   type FocusTimerState
 } from '../shared/focusTimer';
 import { defaultPetId, isKnownPetId, petRegistry } from '../shared/petRegistry';
@@ -15,10 +16,6 @@ type DragState = {
   startMouseY: number;
   startWindowX: number;
   startWindowY: number;
-};
-
-type PetContextMenuState = {
-  isStudyMode: boolean;
 };
 
 type WindowState = {
@@ -41,17 +38,9 @@ type PetPreferences = {
   activePetId: string;
 };
 
-type FocusStats = {
-  todayDate: string;
-  todayCompletedFocusCount: number;
-  todayFocusMinutes: number;
-  todayCompletedBreakCount: number;
-  todayBreakMinutes: number;
-};
-
 const PET_WINDOW_SIZE = {
-  width: 220,
-  height: 300
+  width: 420,
+  height: 420
 };
 
 let petWindow: BrowserWindow | null = null;
@@ -373,6 +362,10 @@ function sendFocusTimerPreferencesChanged() {
   petWindow?.webContents.send('pet-focus-timer-preferences-changed', focusTimerPreferences);
 }
 
+function sendFocusStatsChanged() {
+  petWindow?.webContents.send('pet-focus-stats-changed', getFocusStats());
+}
+
 function setActivePetId(nextPetId: string) {
   if (!isKnownPetId(nextPetId)) {
     return;
@@ -390,6 +383,12 @@ function setFocusTimerState(nextFocusTimerState: FocusTimerState) {
 
 function setFocusTimerAutoAdvance(autoAdvance: boolean) {
   focusTimerPreferences = { autoAdvance };
+  saveFocusTimerPreferences();
+  sendFocusTimerPreferencesChanged();
+}
+
+function setFocusTimerPreferences(nextPreferences: FocusTimerPreferences) {
+  focusTimerPreferences = nextPreferences;
   saveFocusTimerPreferences();
   sendFocusTimerPreferencesChanged();
 }
@@ -433,9 +432,6 @@ function toggleOpenAtLogin() {
 function buildControlMenu() {
   const isVisible = Boolean(petWindow?.isVisible());
   const openAtLogin = getOpenAtLogin();
-  const hasActiveTimer = focusTimerState.mode !== 'idle';
-  const pauseTimerLabel = focusTimerState.mode === 'paused' ? '继续当前计时' : '暂停当前计时';
-  const todayFocusStats = getFocusStats();
 
   return Menu.buildFromTemplate([
     {
@@ -450,18 +446,6 @@ function buildControlMenu() {
       }
     },
     {
-      label: isStudyMode ? '退出学习模式' : '进入学习模式',
-      click: () => {
-        sendPetMenuCommand('toggle-study');
-      }
-    },
-    {
-      label: '回到待机',
-      click: () => {
-        sendPetMenuCommand('back-to-idle');
-      }
-    },
-    {
       label: '切换桌宠',
       submenu: petRegistry.map((pet) => ({
         label: pet.displayName,
@@ -472,79 +456,6 @@ function buildControlMenu() {
           showTrayMenu();
         }
       }))
-    },
-    {
-      label: '专注计时',
-      submenu: [
-        {
-          label: '开始 25 分钟专注',
-          enabled: !hasActiveTimer,
-          click: () => {
-            sendPetMenuCommand('start-focus-25-timer');
-          }
-        },
-        {
-          label: '开始 45 分钟专注',
-          enabled: !hasActiveTimer,
-          click: () => {
-            sendPetMenuCommand('start-focus-45-timer');
-          }
-        },
-        {
-          label: '开始 5 分钟休息',
-          enabled: !hasActiveTimer,
-          click: () => {
-            sendPetMenuCommand('start-break-5-timer');
-          }
-        },
-        {
-          label: '开始 10 分钟休息',
-          enabled: !hasActiveTimer,
-          click: () => {
-            sendPetMenuCommand('start-break-10-timer');
-          }
-        },
-        {
-          label: '自定义计时...',
-          enabled: !hasActiveTimer,
-          click: () => {
-            sendPetMenuCommand('open-custom-focus-timer');
-          }
-        },
-        {
-          label: '自动进入下一阶段',
-          type: 'checkbox',
-          checked: focusTimerPreferences.autoAdvance,
-          click: (menuItem) => {
-            setFocusTimerAutoAdvance(menuItem.checked);
-            showTrayMenu();
-          }
-        },
-        { type: 'separator' },
-        {
-          label: pauseTimerLabel,
-          enabled: hasActiveTimer,
-          click: () => {
-            sendPetMenuCommand('toggle-focus-timer-pause');
-          }
-        },
-        {
-          label: '结束当前计时',
-          enabled: hasActiveTimer,
-          click: () => {
-            sendPetMenuCommand('end-focus-timer');
-          }
-        },
-        { type: 'separator' },
-        {
-          label: `今日专注：${todayFocusStats.todayCompletedFocusCount} 次 · ${todayFocusStats.todayFocusMinutes} 分钟`,
-          enabled: false
-        },
-        {
-          label: `今日休息：${todayFocusStats.todayCompletedBreakCount} 次 · ${todayFocusStats.todayBreakMinutes} 分钟`,
-          enabled: false
-        }
-      ]
     },
     { type: 'separator' },
     {
@@ -620,6 +531,7 @@ function createPetWindow() {
     sendWindowVisibility();
     sendActivePetChanged();
     sendFocusTimerPreferencesChanged();
+    sendFocusStatsChanged();
   });
 }
 
@@ -687,6 +599,8 @@ ipcMain.handle('pet-get-focus-timer-state', () => focusTimerState);
 
 ipcMain.handle('pet-get-focus-timer-preferences', () => focusTimerPreferences);
 
+ipcMain.handle('pet-get-focus-stats', () => getFocusStats());
+
 ipcMain.on('pet-set-focus-timer-state', (_event, nextFocusTimerState: FocusTimerState) => {
   if (!isFocusTimerState(nextFocusTimerState)) {
     return;
@@ -694,6 +608,17 @@ ipcMain.on('pet-set-focus-timer-state', (_event, nextFocusTimerState: FocusTimer
 
   setFocusTimerState(nextFocusTimerState);
 });
+
+ipcMain.on(
+  'pet-set-focus-timer-preferences',
+  (_event, nextPreferences: FocusTimerPreferences) => {
+    if (!isFocusTimerPreferences(nextPreferences)) {
+      return;
+    }
+
+    setFocusTimerPreferences(nextPreferences);
+  }
+);
 
 ipcMain.on('pet-show-focus-timer-notification', (_event, kind: FocusTimerNotificationKind) => {
   showFocusTimerNotification(kind);
@@ -705,42 +630,5 @@ ipcMain.on('pet-record-completed-timer', (_event, mode: FocusTimerBaseMode, dura
   }
 
   recordCompletedTimer(mode, durationMs);
-});
-
-ipcMain.on('pet-show-context-menu', (event, menuState: PetContextMenuState) => {
-  const sourceWindow = BrowserWindow.fromWebContents(event.sender);
-
-  if (!sourceWindow) {
-    return;
-  }
-
-  const menu = Menu.buildFromTemplate([
-    {
-      label: menuState.isStudyMode ? '退出学习模式' : '进入学习模式',
-      click: () => {
-        sendPetMenuCommand('toggle-study');
-      }
-    },
-    {
-      label: '回到待机',
-      click: () => {
-        sendPetMenuCommand('back-to-idle');
-      }
-    },
-    { type: 'separator' },
-    {
-      label: '隐藏桌宠',
-      click: () => {
-        hidePetWindow();
-      }
-    },
-    {
-      label: '退出应用',
-      click: () => {
-        app.quit();
-      }
-    }
-  ]);
-
-  menu.popup({ window: sourceWindow });
+  sendFocusStatsChanged();
 });

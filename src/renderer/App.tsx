@@ -11,6 +11,7 @@ import {
   getFocusTimerActiveMode,
   type FocusTimerBaseMode,
   type FocusTimerPreferences,
+  type FocusStats,
   type FocusTimerState
 } from '../shared/focusTimer';
 import { defaultPetId, getPetConfig, petConfigs, type PetConfig, type PetState } from './pets';
@@ -41,6 +42,16 @@ type CustomTimerForm = {
 type StartFocusTimerOptions = {
   preserveSpeech?: boolean;
 };
+
+function createEmptyFocusStats(): FocusStats {
+  return {
+    todayDate: '',
+    todayCompletedFocusCount: 0,
+    todayFocusMinutes: 0,
+    todayCompletedBreakCount: 0,
+    todayBreakMinutes: 0
+  };
+}
 
 function getAnimationName(petId: string, state: PetState) {
   return `pet-${petId}-${state}`;
@@ -98,6 +109,8 @@ export default function App() {
   const [focusTimerPreferences, setFocusTimerPreferences] = useState<FocusTimerPreferences>({
     autoAdvance: false
   });
+  const [focusStats, setFocusStats] = useState<FocusStats>(() => createEmptyFocusStats());
+  const [isFocusPanelOpen, setIsFocusPanelOpen] = useState(false);
   const [customTimerForm, setCustomTimerForm] = useState<CustomTimerForm>({
     isOpen: false,
     mode: 'focus',
@@ -108,6 +121,7 @@ export default function App() {
   const petButtonRef = useRef<HTMLButtonElement | null>(null);
   const pointerStart = useRef<{ x: number; y: number } | null>(null);
   const previousPointerPosition = useRef<{ x: number; y: number } | null>(null);
+  const focusPanelDragStart = useRef<{ x: number; y: number } | null>(null);
   const isDragging = useRef(false);
   const isPointerOverPet = useRef(false);
   const didMovePastClickLimit = useRef(false);
@@ -311,6 +325,25 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let isMounted = true;
+
+    window.desktopPet.getFocusStats().then((savedStats) => {
+      if (isMounted) {
+        setFocusStats(savedStats);
+      }
+    });
+
+    const removeStatsListener = window.desktopPet.onFocusStatsChanged((nextStats) => {
+      setFocusStats(nextStats);
+    });
+
+    return () => {
+      isMounted = false;
+      removeStatsListener();
+    };
+  }, []);
+
+  useEffect(() => {
     if (focusTimerState.mode !== 'focus' && focusTimerState.mode !== 'break') {
       return;
     }
@@ -412,6 +445,12 @@ export default function App() {
     }
   }
 
+  function updateFocusTimerPreferences(nextPreferences: FocusTimerPreferences) {
+    focusTimerPreferencesRef.current = nextPreferences;
+    setFocusTimerPreferences(nextPreferences);
+    window.desktopPet.setFocusTimerPreferences(nextPreferences);
+  }
+
   function getFocusTimerRemainingMs(timerState: FocusTimerState, now = Date.now()) {
     if (
       (timerState.mode === 'focus' || timerState.mode === 'break') &&
@@ -468,6 +507,11 @@ export default function App() {
       isOpen: false,
       error: null
     }));
+  }
+
+  function openCustomTimerFormFromPanel() {
+    setIsFocusPanelOpen(false);
+    openCustomTimerForm();
   }
 
   function getCustomTimerMinutes() {
@@ -946,7 +990,41 @@ export default function App() {
   function handleContextMenu(event: ReactMouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     clearPendingSingleClick();
-    window.desktopPet.showContextMenu({ isStudyMode: isStudyModeRef.current });
+    clearLongPressTimer();
+    setIsFocusPanelOpen(true);
+  }
+
+  function handleFocusPanelHeaderPointerDown(event: PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    focusPanelDragStart.current = getScreenPosition(event);
+    window.desktopPet.startDrag(focusPanelDragStart.current);
+  }
+
+  function handleFocusPanelHeaderPointerMove(event: PointerEvent<HTMLDivElement>) {
+    if (!focusPanelDragStart.current) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    window.desktopPet.moveDrag(getScreenPosition(event));
+  }
+
+  function endFocusPanelDrag(event: PointerEvent<HTMLDivElement>) {
+    if (!focusPanelDragStart.current) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    focusPanelDragStart.current = null;
+    window.desktopPet.endDrag();
   }
 
   const currentAnimation = currentPet.states[petState];
@@ -969,10 +1047,182 @@ export default function App() {
   const timerLabel = `${formatTimerTime(timerRemainingMs)}${
     focusTimerState.mode === 'paused' ? ' 已暂停' : ''
   }`;
+  const activeTimerMode = getFocusTimerActiveMode(focusTimerState);
+  const timerStatusTitle = (() => {
+    if (focusTimerState.mode === 'idle') {
+      return '当前未开始计时';
+    }
+
+    if (focusTimerState.mode === 'paused') {
+      return '已暂停';
+    }
+
+    return activeTimerMode === 'focus' ? '专注中' : '休息中';
+  })();
+  const timerStatusTime = focusTimerState.mode === 'idle' ? null : formatTimerTime(timerRemainingMs);
+  const hasActiveTimer = focusTimerState.mode !== 'idle';
 
   return (
-    <main className="pet-stage">
+    <main
+      className="pet-stage"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) {
+          setIsFocusPanelOpen(false);
+        }
+      }}
+    >
       <style>{petAnimationCss}</style>
+      {isFocusPanelOpen ? (
+        <div
+          className="focus-panel-layer"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setIsFocusPanelOpen(false);
+            }
+          }}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            setIsFocusPanelOpen(false);
+          }}
+        >
+          <section
+            className="focus-panel"
+            aria-label="吉伊专注助手"
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+          >
+            <div
+              className="focus-panel__header"
+              onPointerDown={handleFocusPanelHeaderPointerDown}
+              onPointerMove={handleFocusPanelHeaderPointerMove}
+              onPointerUp={endFocusPanelDrag}
+              onPointerCancel={endFocusPanelDrag}
+            >
+              <div className="focus-panel__heading">
+                <div className="focus-panel__title">吉伊专注助手</div>
+                <div className="focus-panel__subtitle">要一起认真一下吗？</div>
+              </div>
+              <button
+                className="focus-panel__close"
+                type="button"
+                aria-label="关闭专注面板"
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                }}
+                onClick={() => {
+                  setIsFocusPanelOpen(false);
+                }}
+              >
+                x
+              </button>
+            </div>
+            <div className="focus-panel__body">
+              <div className="focus-panel__status-card">
+                <div className="focus-panel__status-label">{timerStatusTitle}</div>
+                {timerStatusTime ? (
+                  <div className="focus-panel__status-time">{timerStatusTime}</div>
+                ) : null}
+              </div>
+              <div className="focus-panel__section">
+                <div className="focus-panel__section-title">快速开始</div>
+                <div className="focus-panel__grid">
+                  <button
+                    className="focus-panel__button focus-panel__button--focus"
+                    type="button"
+                    disabled={hasActiveTimer}
+                    onClick={() => startFocusTimer('focus', FOCUS_TIMER_PRESET_DURATIONS_MS.focus25)}
+                  >
+                    25分钟专注
+                  </button>
+                  <button
+                    className="focus-panel__button focus-panel__button--focus"
+                    type="button"
+                    disabled={hasActiveTimer}
+                    onClick={() => startFocusTimer('focus', FOCUS_TIMER_PRESET_DURATIONS_MS.focus45)}
+                  >
+                    45分钟专注
+                  </button>
+                  <button
+                    className="focus-panel__button focus-panel__button--break"
+                    type="button"
+                    disabled={hasActiveTimer}
+                    onClick={() => startFocusTimer('break', FOCUS_TIMER_PRESET_DURATIONS_MS.break5)}
+                  >
+                    5分钟休息
+                  </button>
+                  <button
+                    className="focus-panel__button focus-panel__button--break"
+                    type="button"
+                    disabled={hasActiveTimer}
+                    onClick={() => startFocusTimer('break', FOCUS_TIMER_PRESET_DURATIONS_MS.break10)}
+                  >
+                    10分钟休息
+                  </button>
+                </div>
+              </div>
+              <div className="focus-panel__section">
+                <div className="focus-panel__section-title">计时控制</div>
+                <div className="focus-panel__controls">
+                  <button
+                    className="focus-panel__button focus-panel__button--primary"
+                    type="button"
+                    disabled={!hasActiveTimer}
+                    onClick={toggleFocusTimerPause}
+                  >
+                    {focusTimerState.mode === 'paused' ? '继续' : '暂停'}
+                  </button>
+                  <button
+                    className="focus-panel__button focus-panel__button--danger"
+                    type="button"
+                    disabled={!hasActiveTimer}
+                    onClick={endFocusTimer}
+                  >
+                    结束当前计时
+                  </button>
+                  <button
+                    className="focus-panel__button focus-panel__button--secondary"
+                    type="button"
+                    disabled={hasActiveTimer}
+                    onClick={openCustomTimerFormFromPanel}
+                  >
+                    自定义计时...
+                  </button>
+                  <button
+                    className="focus-panel__button focus-panel__button--secondary"
+                    type="button"
+                    disabled
+                    title="后续会加入默认时长等设置"
+                  >
+                    专注设置...
+                  </button>
+                </div>
+              </div>
+              <div className="focus-panel__footer">
+                <div className="focus-panel__footer-title">辅助设置 / 今日记录</div>
+                <label className="focus-panel__toggle">
+                  <input
+                    type="checkbox"
+                    checked={focusTimerPreferences.autoAdvance}
+                    onChange={(event) => {
+                      updateFocusTimerPreferences({ autoAdvance: event.target.checked });
+                    }}
+                  />
+                  <span>自动进入下一阶段</span>
+                </label>
+                <div className="focus-panel__stats">
+                  <div>
+                    今日专注：{focusStats.todayCompletedFocusCount} 次 · {focusStats.todayFocusMinutes} 分钟
+                  </div>
+                  <div>
+                    今日休息：{focusStats.todayCompletedBreakCount} 次 · {focusStats.todayBreakMinutes} 分钟
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
       {customTimerForm.isOpen ? (
         <div className="timer-modal" role="dialog" aria-label="自定义计时">
           <form className="timer-modal__panel" onSubmit={handleCustomTimerSubmit}>

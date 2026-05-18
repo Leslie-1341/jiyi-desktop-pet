@@ -4,6 +4,7 @@ import type {
   FocusTimerBaseMode,
   FocusTimerNotificationKind,
   FocusTimerPreferences,
+  FocusStats,
   FocusTimerState
 } from '../shared/focusTimer';
 
@@ -24,7 +25,6 @@ declare global {
       startDrag: (position: { x: number; y: number }) => void;
       moveDrag: (position: { x: number; y: number }) => void;
       endDrag: () => void;
-      showContextMenu: (state: { isStudyMode: boolean }) => void;
       setStudyMode: (isStudyMode: boolean) => void;
       getWindowVisibility: () => Promise<boolean>;
       getActivePetId: () => Promise<string>;
@@ -32,10 +32,13 @@ declare global {
       onActivePetChanged: (callback: (petId: string) => void) => () => void;
       getFocusTimerState: () => Promise<FocusTimerState>;
       getFocusTimerPreferences: () => Promise<FocusTimerPreferences>;
+      setFocusTimerPreferences: (preferences: FocusTimerPreferences) => void;
       onFocusTimerPreferencesChanged: (
         callback: (preferences: FocusTimerPreferences) => void
       ) => () => void;
       setFocusTimerState: (timerState: FocusTimerState) => void;
+      getFocusStats: () => Promise<FocusStats>;
+      onFocusStatsChanged: (callback: (stats: FocusStats) => void) => () => void;
       showFocusTimerNotification: (kind: FocusTimerNotificationKind) => void;
       recordCompletedTimer: (mode: FocusTimerBaseMode, durationMs: number) => void;
       onWindowVisibility: (callback: (isVisible: boolean) => void) => () => void;

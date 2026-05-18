@@ -16,6 +16,14 @@ export type FocusTimerPreferences = {
   autoAdvance: boolean;
 };
 
+export type FocusStats = {
+  todayDate: string;
+  todayCompletedFocusCount: number;
+  todayFocusMinutes: number;
+  todayCompletedBreakCount: number;
+  todayBreakMinutes: number;
+};
+
 export const FOCUS_TIMER_DURATIONS_MS = {
   focus: 25 * 60 * 1000,
   break: 5 * 60 * 1000

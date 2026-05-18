@@ -12,6 +12,7 @@ type PetMenuCommand =
   | 'end-focus-timer';
 type FocusTimerBaseMode = import('../shared/focusTimer').FocusTimerBaseMode;
 type FocusTimerPreferences = import('../shared/focusTimer').FocusTimerPreferences;
+type FocusStats = import('../shared/focusTimer').FocusStats;
 type FocusTimerState = import('../shared/focusTimer').FocusTimerState;
 type FocusTimerNotificationKind = import('../shared/focusTimer').FocusTimerNotificationKind;
 
@@ -24,9 +25,6 @@ contextBridge.exposeInMainWorld('desktopPet', {
   },
   endDrag: () => {
     ipcRenderer.send('pet-drag-end');
-  },
-  showContextMenu: (state: { isStudyMode: boolean }) => {
-    ipcRenderer.send('pet-show-context-menu', state);
   },
   setStudyMode: (isStudyMode: boolean) => {
     ipcRenderer.send('pet-study-mode-changed', isStudyMode);
@@ -57,6 +55,9 @@ contextBridge.exposeInMainWorld('desktopPet', {
   getFocusTimerPreferences: () => {
     return ipcRenderer.invoke('pet-get-focus-timer-preferences') as Promise<FocusTimerPreferences>;
   },
+  setFocusTimerPreferences: (preferences: FocusTimerPreferences) => {
+    ipcRenderer.send('pet-set-focus-timer-preferences', preferences);
+  },
   onFocusTimerPreferencesChanged: (callback: (preferences: FocusTimerPreferences) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, preferences: FocusTimerPreferences) => {
       callback(preferences);
@@ -70,6 +71,20 @@ contextBridge.exposeInMainWorld('desktopPet', {
   },
   setFocusTimerState: (timerState: FocusTimerState) => {
     ipcRenderer.send('pet-set-focus-timer-state', timerState);
+  },
+  getFocusStats: () => {
+    return ipcRenderer.invoke('pet-get-focus-stats') as Promise<FocusStats>;
+  },
+  onFocusStatsChanged: (callback: (stats: FocusStats) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, stats: FocusStats) => {
+      callback(stats);
+    };
+
+    ipcRenderer.on('pet-focus-stats-changed', listener);
+
+    return () => {
+      ipcRenderer.removeListener('pet-focus-stats-changed', listener);
+    };
   },
   showFocusTimerNotification: (kind: FocusTimerNotificationKind) => {
     ipcRenderer.send('pet-show-focus-timer-notification', kind);

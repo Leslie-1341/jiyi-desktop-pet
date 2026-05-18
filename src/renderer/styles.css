@@ -86,12 +86,256 @@ button {
 .timer-modal {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  z-index: 4;
   display: flex;
   align-items: flex-start;
   justify-content: center;
   padding-top: 18px;
   background: rgba(255, 255, 255, 0.08);
+}
+
+.focus-panel-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 10px;
+  padding-bottom: 18px;
+  box-sizing: border-box;
+}
+
+.focus-panel {
+  position: relative;
+  width: min(366px, calc(100vw - 24px));
+  max-height: calc(100vh - 28px);
+  padding: 13px;
+  border: 3px solid #24201d;
+  border-radius: 24px;
+  color: #2f2b28;
+  background: #fff8e8;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  font-weight: 800;
+}
+
+.focus-panel::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -9px;
+  width: 16px;
+  height: 16px;
+  border-right: 3px solid #24201d;
+  border-bottom: 3px solid #24201d;
+  background: #fff8e8;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.focus-panel__header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 2px 0;
+  cursor: grab;
+  touch-action: none;
+}
+
+.focus-panel__header:active {
+  cursor: grabbing;
+}
+
+.focus-panel__heading {
+  position: relative;
+  padding-left: 10px;
+}
+
+.focus-panel__heading::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 3px;
+  width: 5px;
+  height: 28px;
+  border-radius: 999px;
+  background: #24201d;
+}
+
+.focus-panel__title {
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+.focus-panel__subtitle {
+  margin-top: 4px;
+  color: #6b5b51;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.focus-panel__close {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 2px solid #24201d;
+  border-radius: 50%;
+  color: #24201d;
+  background: #ffffff;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.focus-panel__body {
+  min-height: 0;
+  margin-top: 10px;
+  padding-right: 3px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.focus-panel__body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.focus-panel__body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.focus-panel__body::-webkit-scrollbar-thumb {
+  border: 2px solid #fff8e8;
+  border-radius: 999px;
+  background: rgba(36, 32, 29, 0.34);
+}
+
+.focus-panel__status-card {
+  margin: 0 0 9px;
+  padding: 10px 12px;
+  border: 2px solid #24201d;
+  border-radius: 19px;
+  background: #ffffff;
+  text-align: center;
+}
+
+.focus-panel__status-label {
+  color: #4e453f;
+  font-size: 13px;
+  line-height: 1.1;
+}
+
+.focus-panel__status-time {
+  margin-top: 3px;
+  font-size: 28px;
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.focus-panel__section {
+  padding: 9px;
+  border: 2px solid #24201d;
+  border-radius: 18px;
+  background: #fffdf4;
+}
+
+.focus-panel__section + .focus-panel__section,
+.focus-panel__footer {
+  margin-top: 8px;
+}
+
+.focus-panel__section-title,
+.focus-panel__footer-title {
+  margin-bottom: 7px;
+  color: #4e453f;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.focus-panel__grid,
+.focus-panel__controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+
+.focus-panel__button {
+  min-height: 31px;
+  padding: 0 8px;
+  border: 2px solid #24201d;
+  border-radius: 14px;
+  color: #2f2b28;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.focus-panel__button--focus {
+  background: #fff1ce;
+}
+
+.focus-panel__button--break {
+  background: #f0f8e6;
+}
+
+.focus-panel__button--primary {
+  background: #24201d;
+  color: #ffffff;
+}
+
+.focus-panel__button--danger {
+  background: #ffe6dc;
+}
+
+.focus-panel__button--secondary {
+  min-height: 28px;
+  border-width: 1.5px;
+  background: #ffffff;
+  font-size: 11px;
+}
+
+.focus-panel__button:disabled {
+  color: #918278;
+  background: #eee1cf;
+  border-color: #81746d;
+  cursor: default;
+}
+
+.focus-panel__footer {
+  padding: 8px 10px;
+  border: 2px dashed rgba(36, 32, 29, 0.55);
+  border-radius: 17px;
+  background: #fffaf0;
+}
+
+.focus-panel__toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.focus-panel__toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #24201d;
+}
+
+.focus-panel__stats {
+  display: grid;
+  gap: 3px;
+  margin-top: 7px;
+  color: #5f5148;
+  font-size: 12px;
+  line-height: 1.25;
 }
 
 .timer-modal__panel {
