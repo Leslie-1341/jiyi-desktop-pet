@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   createIdleFocusTimerState,
+  FOCUS_TIMER_DEFAULT_PREFERENCES,
   type FocusTimerBaseMode,
   type FocusTimerNotificationKind,
   type FocusTimerPreferences,
@@ -50,7 +51,7 @@ let isStudyMode = false;
 let activePetId = defaultPetId;
 let focusTimerState = createIdleFocusTimerState();
 let focusStats: FocusStats | null = null;
-let focusTimerPreferences: FocusTimerPreferences = { autoAdvance: false };
+let focusTimerPreferences: FocusTimerPreferences = FOCUS_TIMER_DEFAULT_PREFERENCES;
 
 const isDev = !app.isPackaged;
 
@@ -74,13 +75,34 @@ function getFocusTimerPreferencesPath() {
   return path.join(app.getPath('userData'), 'focus-preferences.json');
 }
 
-function isFocusTimerPreferences(value: unknown): value is FocusTimerPreferences {
+function isFocusTimerPreferences(value: unknown): value is Partial<FocusTimerPreferences> {
   if (!value || typeof value !== 'object') {
     return false;
   }
 
   const preferences = value as Partial<FocusTimerPreferences>;
-  return typeof preferences.autoAdvance === 'boolean';
+  return (
+    (preferences.autoAdvance === undefined || typeof preferences.autoAdvance === 'boolean') &&
+    (preferences.defaultFocusMinutes === undefined ||
+      typeof preferences.defaultFocusMinutes === 'number') &&
+    (preferences.defaultBreakMinutes === undefined ||
+      typeof preferences.defaultBreakMinutes === 'number') &&
+    (preferences.longBreakEnabled === undefined ||
+      typeof preferences.longBreakEnabled === 'boolean') &&
+    (preferences.longBreakEveryFocusSessions === undefined ||
+      typeof preferences.longBreakEveryFocusSessions === 'number') &&
+    (preferences.longBreakMinutes === undefined ||
+      typeof preferences.longBreakMinutes === 'number')
+  );
+}
+
+function normalizeFocusTimerPreferences(
+  preferences: Partial<FocusTimerPreferences>
+): FocusTimerPreferences {
+  return {
+    ...FOCUS_TIMER_DEFAULT_PREFERENCES,
+    ...preferences
+  };
 }
 
 function readFocusTimerPreferences() {
@@ -89,13 +111,13 @@ function readFocusTimerPreferences() {
     const parsedPreferences = JSON.parse(rawPreferences);
 
     if (isFocusTimerPreferences(parsedPreferences)) {
-      return parsedPreferences;
+      return normalizeFocusTimerPreferences(parsedPreferences);
     }
   } catch {
-    return { autoAdvance: false };
+    return FOCUS_TIMER_DEFAULT_PREFERENCES;
   }
 
-  return { autoAdvance: false };
+  return FOCUS_TIMER_DEFAULT_PREFERENCES;
 }
 
 function saveFocusTimerPreferences() {
@@ -382,13 +404,16 @@ function setFocusTimerState(nextFocusTimerState: FocusTimerState) {
 }
 
 function setFocusTimerAutoAdvance(autoAdvance: boolean) {
-  focusTimerPreferences = { autoAdvance };
+  focusTimerPreferences = {
+    ...focusTimerPreferences,
+    autoAdvance
+  };
   saveFocusTimerPreferences();
   sendFocusTimerPreferencesChanged();
 }
 
 function setFocusTimerPreferences(nextPreferences: FocusTimerPreferences) {
-  focusTimerPreferences = nextPreferences;
+  focusTimerPreferences = normalizeFocusTimerPreferences(nextPreferences);
   saveFocusTimerPreferences();
   sendFocusTimerPreferencesChanged();
 }

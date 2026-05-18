@@ -7,6 +7,7 @@ import type {
 } from 'react';
 import {
   createIdleFocusTimerState,
+  FOCUS_TIMER_DEFAULT_PREFERENCES,
   FOCUS_TIMER_DURATIONS_MS,
   getFocusTimerActiveMode,
   type FocusTimerBaseMode,
@@ -42,6 +43,15 @@ type CustomTimerForm = {
 type StartFocusTimerOptions = {
   preserveSpeech?: boolean;
 };
+type FocusPanelView = 'main' | 'settings';
+type FocusSettingsForm = {
+  defaultFocusMinutes: string;
+  defaultBreakMinutes: string;
+  longBreakEnabled: boolean;
+  longBreakEveryFocusSessions: string;
+  longBreakMinutes: string;
+  error: string | null;
+};
 
 function createEmptyFocusStats(): FocusStats {
   return {
@@ -50,6 +60,17 @@ function createEmptyFocusStats(): FocusStats {
     todayFocusMinutes: 0,
     todayCompletedBreakCount: 0,
     todayBreakMinutes: 0
+  };
+}
+
+function createFocusSettingsForm(preferences: FocusTimerPreferences): FocusSettingsForm {
+  return {
+    defaultFocusMinutes: String(preferences.defaultFocusMinutes),
+    defaultBreakMinutes: String(preferences.defaultBreakMinutes),
+    longBreakEnabled: preferences.longBreakEnabled,
+    longBreakEveryFocusSessions: String(preferences.longBreakEveryFocusSessions),
+    longBreakMinutes: String(preferences.longBreakMinutes),
+    error: null
   };
 }
 
@@ -106,11 +127,15 @@ export default function App() {
   const [focusTimerState, setFocusTimerState] = useState<FocusTimerState>(() =>
     createIdleFocusTimerState()
   );
-  const [focusTimerPreferences, setFocusTimerPreferences] = useState<FocusTimerPreferences>({
-    autoAdvance: false
-  });
+  const [focusTimerPreferences, setFocusTimerPreferences] = useState<FocusTimerPreferences>(
+    FOCUS_TIMER_DEFAULT_PREFERENCES
+  );
   const [focusStats, setFocusStats] = useState<FocusStats>(() => createEmptyFocusStats());
   const [isFocusPanelOpen, setIsFocusPanelOpen] = useState(false);
+  const [focusPanelView, setFocusPanelView] = useState<FocusPanelView>('main');
+  const [focusSettingsForm, setFocusSettingsForm] = useState<FocusSettingsForm>(() =>
+    createFocusSettingsForm(FOCUS_TIMER_DEFAULT_PREFERENCES)
+  );
   const [customTimerForm, setCustomTimerForm] = useState<CustomTimerForm>({
     isOpen: false,
     mode: 'focus',
@@ -137,6 +162,7 @@ export default function App() {
   const speechLineRef = useRef<string | null>(null);
   const focusTimerStateRef = useRef<FocusTimerState>(focusTimerState);
   const focusTimerPreferencesRef = useRef<FocusTimerPreferences>(focusTimerPreferences);
+  const focusStatsRef = useRef<FocusStats>(focusStats);
   const currentPet = getPetConfig(activePetId);
   const petAnimationCss = useMemo(() => buildPetAnimationCss(currentPet), [currentPet]);
 
@@ -164,6 +190,10 @@ export default function App() {
   useEffect(() => {
     focusTimerPreferencesRef.current = focusTimerPreferences;
   }, [focusTimerPreferences]);
+
+  useEffect(() => {
+    focusStatsRef.current = focusStats;
+  }, [focusStats]);
 
   useEffect(() => {
     if (petState !== 'waving' && petState !== 'jumping') {
@@ -308,6 +338,7 @@ export default function App() {
       if (isMounted) {
         focusTimerPreferencesRef.current = savedPreferences;
         setFocusTimerPreferences(savedPreferences);
+        setFocusSettingsForm(createFocusSettingsForm(savedPreferences));
       }
     });
 
@@ -315,6 +346,9 @@ export default function App() {
       (nextPreferences) => {
         focusTimerPreferencesRef.current = nextPreferences;
         setFocusTimerPreferences(nextPreferences);
+        setFocusSettingsForm((currentForm) =>
+          currentForm.error === null ? createFocusSettingsForm(nextPreferences) : currentForm
+        );
       }
     );
 
@@ -449,6 +483,76 @@ export default function App() {
     focusTimerPreferencesRef.current = nextPreferences;
     setFocusTimerPreferences(nextPreferences);
     window.desktopPet.setFocusTimerPreferences(nextPreferences);
+  }
+
+  function updateFocusTimerAutoAdvance(autoAdvance: boolean) {
+    updateFocusTimerPreferences({
+      ...focusTimerPreferencesRef.current,
+      autoAdvance
+    });
+  }
+
+  function parseSettingsInteger(value: string, min: number, max: number) {
+    const trimmedValue = value.trim();
+
+    if (!/^\d+$/.test(trimmedValue)) {
+      return null;
+    }
+
+    const parsedValue = Number(trimmedValue);
+
+    if (!Number.isInteger(parsedValue) || parsedValue < min || parsedValue > max) {
+      return null;
+    }
+
+    return parsedValue;
+  }
+
+  function openFocusSettings() {
+    setFocusSettingsForm(createFocusSettingsForm(focusTimerPreferencesRef.current));
+    setFocusPanelView('settings');
+  }
+
+  function saveFocusSettings() {
+    const defaultFocusMinutes = parseSettingsInteger(
+      focusSettingsForm.defaultFocusMinutes,
+      1,
+      180
+    );
+    const defaultBreakMinutes = parseSettingsInteger(
+      focusSettingsForm.defaultBreakMinutes,
+      1,
+      60
+    );
+    const longBreakEveryFocusSessions = parseSettingsInteger(
+      focusSettingsForm.longBreakEveryFocusSessions,
+      2,
+      10
+    );
+    const longBreakMinutes = parseSettingsInteger(focusSettingsForm.longBreakMinutes, 1, 120);
+
+    if (
+      defaultFocusMinutes === null ||
+      defaultBreakMinutes === null ||
+      longBreakEveryFocusSessions === null ||
+      longBreakMinutes === null
+    ) {
+      setFocusSettingsForm((currentForm) => ({
+        ...currentForm,
+        error: '请检查数值范围：专注 1-180，短休息 1-60，轮数 2-10，长休息 1-120'
+      }));
+      return;
+    }
+
+    updateFocusTimerPreferences({
+      ...focusTimerPreferencesRef.current,
+      defaultFocusMinutes,
+      defaultBreakMinutes,
+      longBreakEnabled: focusSettingsForm.longBreakEnabled,
+      longBreakEveryFocusSessions,
+      longBreakMinutes
+    });
+    setFocusPanelView('main');
   }
 
   function getFocusTimerRemainingMs(timerState: FocusTimerState, now = Date.now()) {
@@ -637,12 +741,20 @@ export default function App() {
 
   function completeFocusTimer(mode: FocusTimerBaseMode) {
     const completedDurationMs = focusTimerStateRef.current.durationMs;
-    const shouldAutoAdvance = focusTimerPreferencesRef.current.autoAdvance;
+    const preferences = focusTimerPreferencesRef.current;
+    const shouldAutoAdvance = preferences.autoAdvance;
     const nextMode: FocusTimerBaseMode = mode === 'focus' ? 'break' : 'focus';
-    const nextDurationMs =
+    const completedFocusCount = focusStatsRef.current.todayCompletedFocusCount + 1;
+    const shouldUseLongBreak =
+      mode === 'focus' &&
+      preferences.longBreakEnabled &&
+      completedFocusCount % preferences.longBreakEveryFocusSessions === 0;
+    const nextDurationMinutes =
       nextMode === 'focus'
-        ? FOCUS_TIMER_PRESET_DURATIONS_MS.focus25
-        : FOCUS_TIMER_PRESET_DURATIONS_MS.break5;
+        ? preferences.defaultFocusMinutes
+        : shouldUseLongBreak
+          ? preferences.longBreakMinutes
+          : preferences.defaultBreakMinutes;
 
     updateFocusTimerState(createIdleFocusTimerState());
     isStudyModeRef.current = false;
@@ -656,7 +768,7 @@ export default function App() {
     window.desktopPet.showFocusTimerNotification(mode);
 
     if (shouldAutoAdvance) {
-      startFocusTimer(nextMode, nextDurationMs, { preserveSpeech: true });
+      startFocusTimer(nextMode, nextDurationMinutes * 60 * 1000, { preserveSpeech: true });
     }
   }
 
@@ -991,6 +1103,7 @@ export default function App() {
     event.preventDefault();
     clearPendingSingleClick();
     clearLongPressTimer();
+    setFocusPanelView('main');
     setIsFocusPanelOpen(true);
   }
 
@@ -1100,8 +1213,12 @@ export default function App() {
               onPointerCancel={endFocusPanelDrag}
             >
               <div className="focus-panel__heading">
-                <div className="focus-panel__title">吉伊专注助手</div>
-                <div className="focus-panel__subtitle">要一起认真一下吗？</div>
+                <div className="focus-panel__title">
+                  {focusPanelView === 'settings' ? '专注设置' : '吉伊专注助手'}
+                </div>
+                <div className="focus-panel__subtitle">
+                  {focusPanelView === 'settings' ? '调一调吉伊的陪伴节奏' : '要一起认真一下吗？'}
+                </div>
               </div>
               <button
                 className="focus-panel__close"
@@ -1118,6 +1235,8 @@ export default function App() {
               </button>
             </div>
             <div className="focus-panel__body">
+              {focusPanelView === 'main' ? (
+                <>
               <div className="focus-panel__status-card">
                 <div className="focus-panel__status-label">{timerStatusTitle}</div>
                 {timerStatusTime ? (
@@ -1188,12 +1307,11 @@ export default function App() {
                   >
                     自定义计时...
                   </button>
-                  <button
-                    className="focus-panel__button focus-panel__button--secondary"
-                    type="button"
-                    disabled
-                    title="后续会加入默认时长等设置"
-                  >
+                <button
+                  className="focus-panel__button focus-panel__button--secondary"
+                  type="button"
+                  onClick={openFocusSettings}
+                >
                     专注设置...
                   </button>
                 </div>
@@ -1203,11 +1321,11 @@ export default function App() {
                 <label className="focus-panel__toggle">
                   <input
                     type="checkbox"
-                    checked={focusTimerPreferences.autoAdvance}
-                    onChange={(event) => {
-                      updateFocusTimerPreferences({ autoAdvance: event.target.checked });
-                    }}
-                  />
+                  checked={focusTimerPreferences.autoAdvance}
+                  onChange={(event) => {
+                    updateFocusTimerAutoAdvance(event.target.checked);
+                  }}
+                />
                   <span>自动进入下一阶段</span>
                 </label>
                 <div className="focus-panel__stats">
@@ -1219,6 +1337,132 @@ export default function App() {
                   </div>
                 </div>
               </div>
+                </>
+              ) : (
+                <>
+                  <button
+                    className="focus-panel__back"
+                    type="button"
+                    onClick={() => {
+                      setFocusPanelView('main');
+                    }}
+                  >
+                    返回专注助手
+                  </button>
+                  <div className="focus-panel__section">
+                    <div className="focus-panel__section-title">基础时长</div>
+                    <label className="focus-panel__field">
+                      <span>默认专注时长（分钟）</span>
+                      <input
+                        inputMode="numeric"
+                        min="1"
+                        max="180"
+                        type="number"
+                        value={focusSettingsForm.defaultFocusMinutes}
+                        onChange={(event) => {
+                          setFocusSettingsForm((currentForm) => ({
+                            ...currentForm,
+                            defaultFocusMinutes: event.target.value,
+                            error: null
+                          }));
+                        }}
+                      />
+                    </label>
+                    <label className="focus-panel__field">
+                      <span>默认短休息时长（分钟）</span>
+                      <input
+                        inputMode="numeric"
+                        min="1"
+                        max="60"
+                        type="number"
+                        value={focusSettingsForm.defaultBreakMinutes}
+                        onChange={(event) => {
+                          setFocusSettingsForm((currentForm) => ({
+                            ...currentForm,
+                            defaultBreakMinutes: event.target.value,
+                            error: null
+                          }));
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <div className="focus-panel__section">
+                    <div className="focus-panel__section-title">长休息规则</div>
+                    <label className="focus-panel__toggle focus-panel__toggle--card">
+                      <input
+                        type="checkbox"
+                        checked={focusSettingsForm.longBreakEnabled}
+                        onChange={(event) => {
+                          setFocusSettingsForm((currentForm) => ({
+                            ...currentForm,
+                            longBreakEnabled: event.target.checked,
+                            error: null
+                          }));
+                        }}
+                      />
+                      <span>启用长休息</span>
+                    </label>
+                    <label className="focus-panel__field">
+                      <span>每完成几轮专注后进入长休息</span>
+                      <input
+                        inputMode="numeric"
+                        min="2"
+                        max="10"
+                        type="number"
+                        value={focusSettingsForm.longBreakEveryFocusSessions}
+                        onChange={(event) => {
+                          setFocusSettingsForm((currentForm) => ({
+                            ...currentForm,
+                            longBreakEveryFocusSessions: event.target.value,
+                            error: null
+                          }));
+                        }}
+                      />
+                    </label>
+                    <label className="focus-panel__field">
+                      <span>长休息时长（分钟）</span>
+                      <input
+                        inputMode="numeric"
+                        min="1"
+                        max="120"
+                        type="number"
+                        value={focusSettingsForm.longBreakMinutes}
+                        onChange={(event) => {
+                          setFocusSettingsForm((currentForm) => ({
+                            ...currentForm,
+                            longBreakMinutes: event.target.value,
+                            error: null
+                          }));
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <div className="focus-panel__section focus-panel__section--actions">
+                    {focusSettingsForm.error ? (
+                      <div className="focus-panel__error">{focusSettingsForm.error}</div>
+                    ) : null}
+                    <div className="focus-panel__controls">
+                      <button
+                        className="focus-panel__button focus-panel__button--primary"
+                        type="button"
+                        onClick={saveFocusSettings}
+                      >
+                        保存设置
+                      </button>
+                      <button
+                        className="focus-panel__button focus-panel__button--secondary"
+                        type="button"
+                        onClick={() => {
+                          setFocusSettingsForm(createFocusSettingsForm(focusTimerPreferencesRef.current));
+                          setFocusPanelView('main');
+                        }}
+                      >
+                        取消 / 返回
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </section>
         </div>
